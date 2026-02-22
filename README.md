@@ -15,14 +15,14 @@ Deep linking SDK for iOS — resolve Universal Links, handle deferred deep links
 ### Swift Package Manager (Xcode)
 
 1. In Xcode, go to **File > Add Package Dependencies...**
-2. Enter the repository URL: `https://github.com/AeroDeploy/warplink-ios-sdk`
+2. Enter the repository URL: `https://github.com/WarpLinkApp/warplink-ios-sdk`
 3. Select **Up to Next Major Version** and click **Add Package**
 
 ### Swift Package Manager (Package.swift)
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/AeroDeploy/warplink-ios-sdk", from: "0.1.0")
+    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "0.1.0")
 ]
 ```
 
