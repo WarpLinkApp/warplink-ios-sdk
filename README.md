@@ -1,5 +1,6 @@
 # WarpLink iOS SDK
 
+[![CI](https://github.com/WarpLinkApp/warplink-ios-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/WarpLinkApp/warplink-ios-sdk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Deep linking SDK for iOS — resolve Universal Links, handle deferred deep links, and attribute installs with [WarpLink](https://warplink.app).
