@@ -50,7 +50,7 @@ final class WarpLinkConfigureTests: XCTestCase {
     // MARK: - SDK Version
 
     func testSdkVersionIsExposed() {
-        XCTAssertEqual(WarpLink.sdkVersion, "1.0.1")
+        XCTAssertEqual(WarpLink.sdkVersion, "1.0.2")
     }
 
     // MARK: - Reconfiguration
