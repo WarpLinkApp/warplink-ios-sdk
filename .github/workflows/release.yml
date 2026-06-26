@@ -1,0 +1,31 @@
+name: Release
+
+# Swift Package Manager has no central registry: a git tag IS the release.
+# This workflow creates the matching GitHub Release (authored by github-actions[bot])
+# whenever a v* tag is pushed. Build validation runs in ci.yml.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing git tag to create a GitHub Release for (e.g. v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write # create the GitHub Release for the tag
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref_name }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          generate_release_notes: true
