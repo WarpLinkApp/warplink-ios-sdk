@@ -16,7 +16,10 @@ let package = Package(
     targets: [
         .target(
             name: "WarpLink",
-            path: "Sources/WarpLink"
+            path: "Sources/WarpLink",
+            resources: [
+                .copy("PrivacyInfo.xcprivacy")
+            ]
         ),
         .testTarget(
             name: "WarpLinkTests",
