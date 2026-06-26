@@ -13,7 +13,7 @@ public final class WarpLink {
     private static var isApiKeyValid: Bool?
 
     /// The current SDK version.
-    public static let sdkVersion = "1.0.1"
+    public static let sdkVersion = "1.0.2"
 
     /// Whether the SDK has been configured via `configure(apiKey:options:)`.
     public static var isConfigured: Bool {
