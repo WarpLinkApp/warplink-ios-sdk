@@ -23,7 +23,7 @@ Deep linking SDK for iOS — resolve Universal Links, handle deferred deep links
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "0.1.0")
+    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.0.1")
 ]
 ```
 

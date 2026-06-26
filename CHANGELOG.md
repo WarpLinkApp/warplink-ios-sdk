@@ -5,6 +5,22 @@ All notable changes to the WarpLink iOS SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-06-26
+
+### Fixed
+
+- The SDK now reports its correct version (`1.0.1`) in the `WarpLink-iOS/<version>` User-Agent. Earlier builds shipped a stale `sdkVersion` constant.
+
+### Changed
+
+- Releases are now cut by a tag-driven workflow that creates the GitHub Release automatically.
+
+## [1.0.0] - 2026-06-17
+
+### Added
+
+- First stable release.
+
 ## [0.1.0] - 2026-02-09
 
 ### Added

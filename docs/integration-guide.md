@@ -40,7 +40,7 @@ Sign up at [warplink.app](https://warplink.app). The free tier includes 10,000 c
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "0.1.0")
+    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.0.1")
 ]
 ```
 
