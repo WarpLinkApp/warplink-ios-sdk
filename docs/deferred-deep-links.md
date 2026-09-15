@@ -2,6 +2,8 @@
 
 Deferred deep links let you route users to specific content even when they don't have your app installed yet. The user clicks a link, installs your app from the App Store, and on first launch the SDK matches them back to the original link.
 
+With default options this is fully automatic: `configure()` runs the check and delivers the result to your `onLink` sink.
+
 ## What Are Deferred Deep Links?
 
 Standard Universal Links only work when the app is already installed. Deferred deep links solve the "click before install" problem:
@@ -16,16 +18,72 @@ Without deferred deep links, the user would land on your default home screen wit
 
 ## How It Works
 
-The deferred deep link flow involves 8 steps:
-
 1. **Click** — User taps a WarpLink URL in Safari or another app
-2. **Signal capture** — WarpLink's redirect page collects browser signals (IP, User-Agent, Accept-Language, screen size, timezone) via a brief JavaScript interstitial
+2. **Signal capture** — WarpLink's redirect page records the click's fingerprint signals (server-side, from the request) and the click's link
 3. **Store redirect** — User is redirected to the App Store
 4. **Install** — User installs and opens the app
-5. **First launch detection** — The SDK detects this is the first launch (tracked via UserDefaults)
-6. **Fingerprint collection** — The SDK collects device signals: screen size, timezone, preferred languages, and IDFV
-7. **Attribution request** — The SDK sends collected signals to `/attribution/match`
-8. **Match result** — The server matches against stored click signals and returns a `WarpLinkDeepLink` with `isDeferred: true`
+5. **First launch** — On `configure()`, the SDK collects raw device signals (preferred language, timezone, IDFV) and posts them to `/attribution/match`
+6. **Match result** — The server computes the fingerprint (adding the request IP) and returns a `WarpLinkDeepLink` with `isDeferred: true`, delivered to `onLink`
+
+The SDK sends only `accept_language` + `timezone` + `timezone_offset` + `app_bundle_id` + optional `device_id` (IDFV). The `timezone` field is the IANA zone name (e.g. `America/Toronto`), new in 1.1.0; the offset stays as the fallback key for older SDKs. See [Attribution](attribution.md) for the full signal set.
+
+## Automatic vs manual
+
+**Automatic (default).** `autoDeferredCheck` is on, so `configure()` fires the check for you and routes any match to `onLink`. A match arrives with `isDeferred == true`. A no-match is suppressed and not dispatched to the sink; only a real match or an error reaches `onLink`. A delivered result arrives at most once (it is not re-fired on every later launch).
+
+```swift
+WarpLink.configure(
+    apiKey: "wl_live_yoursdkkeyhere000000000000000000",
+    options: WarpLinkOptions(onLink: { result in
+        if case .success(let deepLink?) = result, deepLink.isDeferred {
+            navigate(to: deepLink)
+        }
+    })
+)
+```
+
+**Manual.** Disable `autoDeferredCheck` and call it yourself:
+
+```swift
+WarpLink.configure(
+    apiKey: "wl_live_yoursdkkeyhere000000000000000000",
+    options: WarpLinkOptions(autoDeferredCheck: false)
+)
+
+WarpLink.checkDeferredDeepLink { result in
+    switch result {
+    case .success(let deepLink?):
+        navigate(to: deepLink)
+    case .success(nil):
+        showOnboarding()
+    case .failure(let error):
+        print("Deferred deep link error: \(error.localizedDescription)")
+    }
+}
+```
+
+## First-launch model: attempt vs complete
+
+The SDK splits the first-launch flag into **attempted** and **completed**:
+
+- An attribution attempt is marked **completed** only on a *definitive server response* (a match or a confirmed no-match).
+- If the attempt fails before that (for example, the device is offline on first launch), it is marked **attempted** but not **completed**, so the SDK **retries on the next launch**.
+
+This fixes the classic footgun where an offline first launch silently consumed the one-shot flag and no attribution ever ran.
+
+### Reinstall behavior
+
+A reinstall counts as an install, so attribution runs again on a reinstall.
+
+The completed marker is scoped to one install: it lives in a file that is excluded from iCloud and iTunes backups, so it goes away with the app and does not come back from a restore. Within one install it still guarantees at most one attribution, however many times the app launches.
+
+A second, separate marker in the **Keychain** records only that this device has been attributed at some point. It gates nothing. It survives the delete and the restore, which is how the SDK can tell a reinstall apart from a first install and report `is_reinstall` with the attribution request. Installs and reinstalls are counted together in the dashboard.
+
+## Caching Behavior
+
+- The network attribution call happens once, when the attempt completes.
+- The matched result is cached (`WarpLink.attributionResult`), and `checkDeferredDeepLink` returns it without a network call after completion.
+- A failed attempt does not cache a result and does not block a retry.
 
 ## Confidence Scores
 
@@ -34,64 +92,38 @@ The match confidence depends on the matching method and time elapsed since the c
 | Scenario | Confidence | Match Type |
 |----------|------------|------------|
 | IDFV re-engagement (app was previously installed) | 1.0 | `deterministic` |
-| Enriched fingerprint, < 1 hour since click | 0.85 | `probabilistic` |
-| Enriched fingerprint, < 24 hours since click | 0.65 | `probabilistic` |
-| Enriched fingerprint, < 72 hours since click | 0.40 | `probabilistic` |
-| Multiple candidates matched | -0.15 per additional candidate | `probabilistic` |
+| Fingerprint, < 1 hour since click | 0.85 | `probabilistic` |
+| Fingerprint, < 3 hours since click | 0.65 | `probabilistic` |
+| Fingerprint, < 6 hours since click | 0.50 | `probabilistic` |
+| Fingerprint, < 24 hours since click | 0.30 | `probabilistic` |
+| 24 hours or more since click | no match | none |
 
-**Recommendation:** Route to specific content when `matchConfidence` is above 0.5. Show generic onboarding when below 0.5.
+The fingerprint rows are the ceilings for the zone-name variant that an SDK collecting a zone name sends. The offset variant kept for older SDKs scores a band lower (0.80 down to 0.25), and the language-only fallback lower still (0.70 down to 0.20). Two multipliers then reduce whichever ceiling applied: 0.6 when more than one distinct link shared the fingerprint, and 0.6 / 0.9 / 1.0 for a carrier-grade-NAT, household-IPv4, or IPv6 click address. See [Attribution](attribution.md) for the full tables.
 
-## Match Window Configuration
-
-The match window controls how far back the server looks for matching clicks. Default is 72 hours.
-
-```swift
-// Reduce match window to 48 hours for higher accuracy
-WarpLink.configure(
-    apiKey: "wl_live_your_api_key_here_abcdefgh",
-    options: WarpLinkOptions(matchWindowHours: 48)
-)
-```
-
-A shorter window reduces false positives but may miss users who take longer to install.
-
-## Caching Behavior
-
-- The SDK checks for a deferred deep link only on the first launch.
-- The result (match or no match) is cached in UserDefaults.
-- Subsequent calls to `checkDeferredDeepLink` return the cached result without a network request.
-- This means the attribution check happens exactly once per app install.
+**Recommendation:** Route to specific content when `matchConfidence` is above 0.5; show generic onboarding below it. Gate anything sensitive on `matchGuaranteed` instead, which is `true` only for a deterministic match: a probabilistic match is a best guess from a network-shaped fingerprint and can name the wrong user. The confidence bands are server-side, and the match window is configured per link in the dashboard (6 hours by default, 24 at most). There is no client-side match-window setting.
 
 ## Code Example
 
 ```swift
-WarpLink.checkDeferredDeepLink { result in
+func handleLink(_ result: Result<WarpLinkDeepLink?, WarpLinkError>) {
     switch result {
-    case .success(let deepLink):
-        guard let deepLink = deepLink else {
-            // No deferred deep link — show default onboarding
-            showOnboarding()
-            return
-        }
-
-        // Route based on confidence
+    case .success(let deepLink?):
         let confidence = deepLink.matchConfidence ?? 0
 
-        if confidence > 0.5 {
-            // High confidence — route to specific content
-            if let deepLinkUrl = deepLink.deepLinkUrl {
-                navigateTo(deepLinkUrl)
-            } else {
-                navigateTo(deepLink.destination)
-            }
-        } else {
-            // Low confidence — show generic welcome with a hint
-            showWelcome(suggestedContent: deepLink.destination)
+        // Identity work needs a deterministic match, not a high score.
+        if deepLink.matchGuaranteed {
+            restoreAccount(from: deepLink)
         }
 
+        if confidence > 0.5 {
+            navigate(to: deepLink.deepLinkUrl ?? deepLink.destination)
+        } else {
+            showWelcome(suggested: deepLink.destination)
+        }
+    case .success(nil):
+        showOnboarding()                // deferred check ran, no match
     case .failure(let error):
-        // Network error on first launch — show default experience
-        // Consider retrying when connectivity is restored
+        // Offline on first launch, say — the SDK will retry next launch.
         print("Deferred deep link error: \(error.localizedDescription)")
         showOnboarding()
     }
@@ -102,20 +134,20 @@ WarpLink.checkDeferredDeepLink { result in
 
 ### Offline First Launch
 
-If the device has no network connectivity on first launch, `checkDeferredDeepLink` will fail with `.networkError`. The first-launch flag will have been consumed, so retrying after connectivity is restored will return the cached `nil` result.
-
-**Recommendation:** If network connectivity is critical for your first-launch experience, check for connectivity before calling `checkDeferredDeepLink`, or implement a retry mechanism that listens for network changes.
+If the device has no connectivity on first launch, the attempt fails with `.networkError` and is **not** marked complete. The SDK retries the attribution check on the next launch. You don't need to build your own retry loop, though you may still choose to show a default experience meanwhile.
 
 ### App Reinstall
 
-UserDefaults may persist across app delete/reinstall depending on the iOS version and iCloud backup settings. If UserDefaults persists, the SDK will consider it a subsequent launch and return the previously cached result (or `nil`) instead of performing a new attribution check.
+Deleting the app clears the completed marker along with the app container, so the next launch runs the deferred check again and can match a fresh click. The request carries `is_reinstall: true`, because the device-level marker in the Keychain outlived the delete. Restoring a backup behaves the same way: the marker is excluded from backups, so a restored device attributes its install rather than skipping it.
 
 ### Multiple Links Clicked Before Install
 
-If a user clicks multiple WarpLink URLs before installing, only the **most recent** click is stored for matching. The server matches against the latest deferred payload for the fingerprint.
+A fingerprint is a network rather than a device, so several clicks can land under one key: your own user clicking twice, or two strangers behind the same NAT. The platform keeps them as a list, newest first, up to 10 per fingerprint. A second click no longer overwrites the first, so the install that belongs to the earlier click can still find it.
+
+The server matches against the newest entry your app is allowed to claim, and removes only that entry once it becomes an install. When more than one entry was claimable, the match is scored lower to reflect that the answer was picked from a set.
 
 ## Related Guides
 
-- [Attribution](attribution.md) — detailed explanation of matching tiers
+- [Attribution](attribution.md) — the signal set and matching tiers
 - [Error Handling](error-handling.md) — handling deferred deep link errors
 - [Troubleshooting](troubleshooting.md) — common deferred deep link issues

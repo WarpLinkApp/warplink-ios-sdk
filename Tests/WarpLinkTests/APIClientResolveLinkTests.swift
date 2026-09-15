@@ -42,7 +42,7 @@ final class APIClientResolveLinkTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
         session = URLSession(configuration: config)
-        client = APIClient(apiKey: testApiKey, baseURL: baseURL, session: session)
+        client = APIClient(apiKey: testApiKey, baseURL: baseURL, transport: URLSessionTransport(session: session))
     }
 
     override func tearDown() {
@@ -76,7 +76,7 @@ final class APIClientResolveLinkTests: XCTestCase {
             XCTAssertEqual(response.destinationUrl, "https://example.com")
             XCTAssertEqual(response.iosUrl, "myapp://page")
             XCTAssertNil(response.iosFallbackUrl)
-            XCTAssertEqual(response.customParams["promo"] as? String, "summer")
+            XCTAssertEqual(response.customParams["promo"]?.stringValue, "summer")
             XCTAssertEqual(response.createdAt, "2026-01-01T00:00:00.000Z")
             exp.fulfill()
         }
@@ -104,6 +104,52 @@ final class APIClientResolveLinkTests: XCTestCase {
 
     func testResolveLink401ReturnsInvalidApiKey() {
         mockResponse(statusCode: 401, json: ["error": "Unauthorized"])
+
+        let exp = expectation(description: "completion")
+        client.resolveLink(slug: "abc123", domain: "aplnk.to") { result in
+            if case .failure(let error) = result {
+                if case .invalidApiKey = error {
+                    // Expected
+                } else {
+                    XCTFail("Expected invalidApiKey, got \(error)")
+                }
+            } else {
+                XCTFail("Expected failure, got \(result)")
+            }
+            exp.fulfill()
+        }
+        waitForExpectations(timeout: 2)
+    }
+
+    func testResolveLink403PasswordRequiredReturnsPasswordRequired() {
+        mockResponse(statusCode: 403, json: [
+            "error": [
+                "code": "PASSWORD_REQUIRED",
+                "message": "This link is password protected.",
+            ],
+        ])
+
+        let exp = expectation(description: "completion")
+        client.resolveLink(slug: "secret", domain: "aplnk.to") { result in
+            if case .failure(let error) = result {
+                if case .passwordRequired = error {
+                    // Expected
+                } else {
+                    XCTFail("Expected passwordRequired, got \(error)")
+                }
+            } else {
+                XCTFail("Expected failure, got \(result)")
+            }
+            exp.fulfill()
+        }
+        waitForExpectations(timeout: 2)
+    }
+
+    func testResolveLink403WithoutPasswordCodeStillReturnsInvalidApiKey() {
+        // A 403 is also how a rejected key answers. Only the body's code tells
+        // the two apart, so a refusal that carries no code must keep the old
+        // meaning rather than accusing every 403 of being password protected.
+        mockResponse(statusCode: 403, json: ["error": ["code": "FORBIDDEN"]])
 
         let exp = expectation(description: "completion")
         client.resolveLink(slug: "abc123", domain: "aplnk.to") { result in
@@ -172,6 +218,7 @@ final class APIClientResolveLinkTests: XCTestCase {
         waitForExpectations(timeout: 2)
     }
 
+    // conformance: WL-S17
     func testResolveLinkNullIosUrl() {
         let json: [String: Any] = [
             "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -215,6 +262,69 @@ final class APIClientResolveLinkTests: XCTestCase {
             exp.fulfill()
         }
         waitForExpectations(timeout: 2)
+    }
+
+    // MARK: - One tap id per tap, and a bound on every attempt
+
+    // A 404 is used deliberately in the three below: it is not retryable, so
+    // they stay at one real round trip each even after the bounded retry lands.
+
+    func testTheTapIdTravelsAsAHeader() {
+        var seen: String?
+        MockURLProtocol.requestHandler = { request in
+            seen = request.value(forHTTPHeaderField: "X-WarpLink-Tap-Id")
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil
+            )!
+            return (response, Data())
+        }
+
+        let exp = expectation(description: "completion")
+        client.resolveLink(
+            slug: "abc123", domain: "aplnk.to",
+            tapId: "0b6e7a3c-6c5a-4a2e-9f0e-2d9a1c7b4e11"
+        ) { _ in exp.fulfill() }
+        wait(for: [exp], timeout: 2)
+
+        XCTAssertEqual(seen, "0b6e7a3c-6c5a-4a2e-9f0e-2d9a1c7b4e11")
+    }
+
+    func testNoTapIdMeansNoHeader() {
+        var present = true
+        MockURLProtocol.requestHandler = { request in
+            present = request.value(forHTTPHeaderField: "X-WarpLink-Tap-Id") != nil
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil
+            )!
+            return (response, Data())
+        }
+
+        let exp = expectation(description: "completion")
+        client.resolveLink(slug: "abc123", domain: "aplnk.to") { _ in exp.fulfill() }
+        wait(for: [exp], timeout: 2)
+
+        XCTAssertFalse(present)
+    }
+
+    func testTheAttemptTimeoutReachesTheRequest() {
+        // That the SDK sets one at all. That URLSession honours it is proved end
+        // to end by the accepted-and-never-answered test in Task 9.
+        var seen: TimeInterval?
+        MockURLProtocol.requestHandler = { request in
+            seen = request.timeoutInterval
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil
+            )!
+            return (response, Data())
+        }
+
+        let exp = expectation(description: "completion")
+        client.resolveLink(
+            slug: "abc123", domain: "aplnk.to", timeout: 4
+        ) { _ in exp.fulfill() }
+        wait(for: [exp], timeout: 2)
+
+        XCTAssertEqual(seen, 4)
     }
 
     // MARK: - Helpers

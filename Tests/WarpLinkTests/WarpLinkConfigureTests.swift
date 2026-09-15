@@ -37,41 +37,82 @@ final class WarpLinkConfigureTests: XCTestCase {
         }
     }
 
+    // conformance: WL-S11
+    func testInvalidApiKeyFormatDispatchedToOnLink() {
+        // Cross-SDK parity: a malformed key is reported via onLink (Android does
+        // the same), not silently swallowed. Dispatched async on the main queue.
+        let expectation = expectation(description: "onLink receives format error")
+        // A Counter rather than a captured `var`. onLink is dispatched, so the
+        // closure is concurrently executing and mutating a local from inside it
+        // does not compile under strict concurrency checking. Counting also says
+        // more than a flag did: exactly one dispatch, not at least one.
+        let formatErrors = Counter()
+        let options = WarpLinkOptions(onLink: { result in
+            if case .failure(.invalidApiKeyFormat) = result {
+                formatErrors.increment()
+            }
+            expectation.fulfill()
+        })
+        WarpLink.configure(apiKey: "wl_live_tooshort", options: options)
+        wait(for: [expectation], timeout: 2.0)
+        XCTAssertEqual(formatErrors.value, 1)
+        XCTAssertFalse(WarpLink.isConfigured)
+    }
+
+    // The other half of the malformed-key parity scenario claimed above: the
+    // warning, which is emitted even when nothing is listening.
+    func testAMalformedKeyAlwaysWarns() throws {
+        var lines: [String] = []
+        let logger = Logger(debugEnabled: false, sink: { lines.append($0) })
+
+        WarpLink.reportInvalidKeyFormat("wl_live_short", options: WarpLinkOptions(), logger: logger)
+
+        // Debug logging is off and there is no onLink: this line is the ONLY
+        // signal the developer gets. Downgrading warn() to log() stayed green.
+        XCTAssertEqual(lines.count, 1)
+        // Unwrapped rather than subscripted: XCTAssert does not stop the test,
+        // so lines[0] on an empty array would trap and take every class after
+        // this one down with it.
+        let warning = try XCTUnwrap(lines.first)
+        XCTAssertTrue(warning.contains("WARNING"))
+        XCTAssertTrue(warning.contains("Invalid API key format"))
+    }
+
     func testValidLiveKeyAccepted() {
-        WarpLink.configure(apiKey: validLiveKey)
+        WarpLink.configure(apiKey: validLiveKey, options: TestSupport.noAuto)
         XCTAssertTrue(WarpLink.isConfigured)
     }
 
     func testValidTestKeyAccepted() {
-        WarpLink.configure(apiKey: validTestKey)
+        WarpLink.configure(apiKey: validTestKey, options: TestSupport.noAuto)
         XCTAssertTrue(WarpLink.isConfigured)
     }
 
     // MARK: - SDK Version
 
     func testSdkVersionIsExposed() {
-        XCTAssertEqual(WarpLink.sdkVersion, "1.0.2")
+        XCTAssertEqual(WarpLink.sdkVersion, "1.1.0")
     }
 
     // MARK: - Reconfiguration
 
     func testSecondConfigureReplaces() {
-        WarpLink.configure(apiKey: validLiveKey)
+        WarpLink.configure(apiKey: validLiveKey, options: TestSupport.noAuto)
         XCTAssertTrue(WarpLink.isConfigured)
 
-        WarpLink.configure(apiKey: validTestKey)
+        WarpLink.configure(apiKey: validTestKey, options: TestSupport.noAuto)
         XCTAssertTrue(WarpLink.isConfigured)
     }
 
     // MARK: - Service Wiring
 
     func testConfigureCreatesInternalServices() {
-        WarpLink.configure(apiKey: validLiveKey)
+        WarpLink.configure(apiKey: validLiveKey, options: TestSupport.noAuto)
         XCTAssertTrue(WarpLink.isConfigured)
     }
 
     func testResetClearsAllState() {
-        WarpLink.configure(apiKey: validLiveKey)
+        WarpLink.configure(apiKey: validLiveKey, options: TestSupport.noAuto)
         XCTAssertTrue(WarpLink.isConfigured)
 
         WarpLink.reset()
@@ -82,14 +123,14 @@ final class WarpLinkConfigureTests: XCTestCase {
 
     func testConcurrentConfigureDoesNotCrash() {
         DispatchQueue.concurrentPerform(iterations: 100) { _ in
-            WarpLink.configure(apiKey: validLiveKey)
+            WarpLink.configure(apiKey: validLiveKey, options: TestSupport.noAuto)
         }
         XCTAssertTrue(WarpLink.isConfigured)
     }
 
     func testRapidReconfigurationDoesNotLeak() {
         for _ in 0..<1000 {
-            WarpLink.configure(apiKey: validLiveKey)
+            WarpLink.configure(apiKey: validLiveKey, options: TestSupport.noAuto)
         }
         XCTAssertTrue(WarpLink.isConfigured)
     }

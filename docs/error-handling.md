@@ -12,29 +12,30 @@ The WarpLink SDK uses the `WarpLinkError` enum for all error cases. Every error 
 
 ```swift
 // Ensure this runs before any handleDeepLink or checkDeferredDeepLink calls
-WarpLink.configure(apiKey: "wl_live_your_api_key_here_abcdefgh")
+WarpLink.configure(apiKey: "wl_live_yoursdkkeyhere000000000000000000")
 ```
 
 ---
 
 ### `.invalidApiKeyFormat`
 
-**When:** The API key passed to `configure()` does not match the expected format: `wl_live_` or `wl_test_` followed by exactly 32 alphanumeric characters.
+**When:** The SDK key passed to `configure()` does not match the expected format: `wl_live_` or `wl_test_` followed by exactly 32 alphanumeric characters.
 
-**Fix:** Verify your API key in the [WarpLink dashboard](https://warplink.app) under **Settings > API Keys**. Ensure you're copying the full key.
+**Fix:** Verify your SDK key in the [WarpLink dashboard](https://warplink.app) under **API Keys**. Ensure you're copying the full key.
 
-**Note:** This error does not surface through completion handlers — `configure()` silently returns without configuring the SDK. Enable `debugLogging` to see the warning in the console.
+**Note:** This error surfaces through the `onLink` sink: `configure()` dispatches `WarpLinkError.invalidApiKeyFormat` to `onLink` and always logs a `[WarpLink] WARNING:` line (even without `debugLogging`), then stays unconfigured.
 
 ---
 
 ### `.invalidApiKey`
 
-**When:** The server rejects the API key (HTTP 401 or 403). The key may be revoked, expired, or incorrect.
+**When:** The server rejects the key (HTTP 401 or 403). The key may be revoked, expired, incorrect, or an API key rather than an SDK key.
 
 **Fix:**
-1. Check that you're using the correct key (live vs. test)
-2. Verify the key is still active in the dashboard
-3. Generate a new key if the current one was revoked
+1. Confirm you are using an **SDK key**, not an API key. Only an SDK key can record install attribution, so an API key with `links:read` still passes `/sdk/validate` and resolves links while every attribution call comes back `403`
+2. Check that the key in your build matches the one shown in the dashboard. A stale or partially copied key can still pass local format validation and then be rejected by the server
+3. Verify the key is still active in the dashboard under **API Keys**
+4. Generate a new key if the current one was revoked
 
 ---
 
@@ -42,7 +43,11 @@ WarpLink.configure(apiKey: "wl_live_your_api_key_here_abcdefgh")
 
 **When:** A network request fails — no internet connectivity, DNS resolution failure, or request timeout.
 
-**Fix:** Retry with exponential backoff. Check device connectivity before retrying.
+**Fix:** Check device connectivity and show an offline state. A retry loop of your own is not the first thing to reach for here, because the SDK has already run one.
+
+Before you see this, the SDK has already tried again. A resolve or a deferred check that fails on a dead or flaky connection, or with a 5xx, is attempted up to three times, with short waits between attempts. Every attempt has its own time limit, so one that hangs rather than fails cannot swallow the others, and the whole sequence is limited to about twelve seconds. A weak connection usually delivers on the second attempt, in about eight. By the time `.networkError` reaches you, all of those attempts have failed. Refusals are never retried: a 404, a 403 and an expired link are answered on the first attempt, because the server will give the same answer to the second.
+
+A failed resolve also releases the SDK's duplicate-tap guard, so a user who taps the same link again straight away really re-resolves it rather than being handed the failure back.
 
 ```swift
 case .failure(let error):
@@ -74,8 +79,8 @@ case .failure(let error):
 
 | Status Code | Meaning | Action |
 |-------------|---------|--------|
-| 401 | Unauthorized | Check API key |
-| 403 | Forbidden | Check API key permissions |
+| 401 | Unauthorized | Check the key you passed to `configure()` |
+| 403 | Forbidden | A password protected link returns `.passwordRequired`, otherwise confirm it is an SDK key, not an API key |
 | 429 | Rate limited | Retry after delay |
 | 500 | Server error | Retry later, report if persistent |
 | 503 | Service unavailable | Retry later |
@@ -84,7 +89,7 @@ case .failure(let error):
 case .failure(let error):
     if case .serverError(let statusCode, let message) = error {
         if statusCode == 429 {
-            // Rate limited — retry after delay
+            // Rate limited. Retry after a delay.
         } else if statusCode >= 500 {
             // Server issue — retry later
         }
@@ -95,16 +100,15 @@ case .failure(let error):
 
 ### `.invalidURL`
 
-**When:** A URL passed to `handleDeepLink(_:completion:)` is not a recognized WarpLink Universal Link. Currently, only the `aplnk.to` domain is recognized.
+**When:** A URL passed to `handleDeepLink(_:completion:)` is not a recognized WarpLink Universal Link. The SDK recognizes `aplnk.to`, the domains you declare via `WarpLinkOptions.linkDomains` or the `WarpLinkDomains` Info.plist array, and your org's verified custom domains fetched from `/sdk/validate` on `configure()`.
 
-**Fix:** Verify the URL host is `aplnk.to`. If you're using a custom domain, note that custom domain support in the SDK requires a future update.
+**Fix:** Verify the URL host is `aplnk.to`, a domain you declared locally, or one of your verified custom domains. A domain that is only fetched from the server is unknown until that request answers, so declare yours locally if a link has to resolve on a first launch.
 
 ```swift
-// Only pass WarpLink URLs to handleDeepLink
-if url.host == "aplnk.to" {
-    WarpLink.handleDeepLink(url) { result in
-        // ...
-    }
+// Pass WarpLink URLs (aplnk.to or a verified custom domain) to handleDeepLink.
+// A URL on an unrecognized host comes back as .invalidURL.
+WarpLink.handleDeepLink(url) { result in
+    // ...
 }
 ```
 
@@ -118,6 +122,19 @@ if url.host == "aplnk.to" {
 1. Verify the link exists in the [WarpLink dashboard](https://warplink.app)
 2. Check that the link is active (not expired or disabled)
 3. Ensure the slug in the URL matches
+
+---
+
+### `.passwordRequired`
+
+**When:** The link is password protected (HTTP 403). Resolving it returns no destination and no platform URLs, because the password is checked in the browser and the app never sees it.
+
+**Fix:** Open the short URL itself in a browser. The password form lives there, and a correct password redirects on to the destination.
+
+```swift
+case .passwordRequired:
+    UIApplication.shared.open(tappedURL)
+```
 
 ---
 
@@ -157,7 +174,7 @@ func handleWarpLinkError(_ error: WarpLinkError) {
 
     case .serverError(let statusCode, _):
         if statusCode == 429 {
-            // Rate limited — back off
+            // Rate limited. Back off.
             retryAfterDelay()
         } else {
             showAlert("Server error. Please try again later.")
@@ -170,6 +187,10 @@ func handleWarpLinkError(_ error: WarpLinkError) {
     case .linkNotFound:
         // Link deleted or expired
         showAlert("This link is no longer available.")
+
+    case .passwordRequired:
+        // Password checked in the browser, never in the app
+        UIApplication.shared.open(tappedURL)
 
     case .decodingError:
         // SDK may be outdated

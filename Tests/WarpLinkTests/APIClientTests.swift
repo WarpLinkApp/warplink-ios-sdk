@@ -43,7 +43,7 @@ final class APIClientTests: XCTestCase {
         client = APIClient(
             apiKey: "wl_live_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
             baseURL: "https://api.warplink.app/v1",
-            session: session
+            transport: URLSessionTransport(session: session)
         )
     }
 
@@ -63,11 +63,39 @@ final class APIClientTests: XCTestCase {
 
         let exp = expectation(description: "completion")
         client.validateApiKey { result in
-            if case .success(let valid) = result {
-                XCTAssertTrue(valid)
+            if case .success(let validation) = result {
+                XCTAssertTrue(validation.valid)
             } else {
-                XCTFail("Expected success(true), got \(result)")
+                XCTFail("Expected success(valid), got \(result)")
             }
+            exp.fulfill()
+        }
+        waitForExpectations(timeout: 2)
+    }
+
+    func testValidateApiKeyParsesDomains() {
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200,
+                httpVersion: nil, headerFields: nil
+            )!
+            let data = try JSONSerialization.data(withJSONObject: [
+                "valid": true,
+                "org_id": "org-123",
+                "domains": ["aplnk.to", "go.acme.com"],
+            ])
+            return (response, data)
+        }
+
+        let exp = expectation(description: "completion")
+        client.validateApiKey { result in
+            guard case .success(let validation) = result else {
+                XCTFail("Expected success, got \(result)")
+                exp.fulfill()
+                return
+            }
+            XCTAssertTrue(validation.valid)
+            XCTAssertEqual(validation.domains, ["aplnk.to", "go.acme.com"])
             exp.fulfill()
         }
         waitForExpectations(timeout: 2)
@@ -84,10 +112,10 @@ final class APIClientTests: XCTestCase {
 
         let exp = expectation(description: "completion")
         client.validateApiKey { result in
-            if case .success(let valid) = result {
-                XCTAssertFalse(valid)
+            if case .success(let validation) = result {
+                XCTAssertFalse(validation.valid)
             } else {
-                XCTFail("Expected success(false), got \(result)")
+                XCTFail("Expected success(invalid), got \(result)")
             }
             exp.fulfill()
         }
@@ -105,10 +133,10 @@ final class APIClientTests: XCTestCase {
 
         let exp = expectation(description: "completion")
         client.validateApiKey { result in
-            if case .success(let valid) = result {
-                XCTAssertFalse(valid)
+            if case .success(let validation) = result {
+                XCTAssertFalse(validation.valid)
             } else {
-                XCTFail("Expected success(false), got \(result)")
+                XCTFail("Expected success(invalid), got \(result)")
             }
             exp.fulfill()
         }

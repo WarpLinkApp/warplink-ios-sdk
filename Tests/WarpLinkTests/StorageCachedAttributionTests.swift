@@ -11,7 +11,11 @@ final class StorageCachedAttributionTests: XCTestCase {
         super.setUp()
         defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
-        storage = Storage(defaults: defaults)
+        storage = Storage(
+            defaults: defaults,
+            markerStore: InMemoryMarkerStore(),
+            installMarkerStore: InMemoryMarkerStore()
+        )
     }
 
     override func tearDown() {
@@ -24,7 +28,7 @@ final class StorageCachedAttributionTests: XCTestCase {
             linkId: "link-123",
             destination: "https://example.com/page",
             deepLinkUrl: "myapp://content/42",
-            customParams: ["promo": "summer", "ref": "email"],
+            customParams: ["promo": .string("summer"), "ref": .string("email")],
             isDeferred: true,
             matchType: .probabilistic,
             matchConfidence: 0.85
@@ -34,6 +38,7 @@ final class StorageCachedAttributionTests: XCTestCase {
         let cached = storage.cachedAttribution
         XCTAssertNotNil(cached)
         XCTAssertEqual(cached?.linkId, "link-123")
+        XCTAssertEqual(cached?.customParams["promo"]?.stringValue, "summer")
         XCTAssertEqual(cached?.destination, "https://example.com/page")
         XCTAssertEqual(cached?.deepLinkUrl, "myapp://content/42")
         XCTAssertTrue(cached?.isDeferred ?? false)
@@ -65,15 +70,15 @@ final class StorageCachedAttributionTests: XCTestCase {
         let deepLink = WarpLinkDeepLink(
             linkId: "link-789",
             destination: "https://example.com",
-            customParams: ["key1": "value1", "key2": "value2"],
+            customParams: ["key1": .string("value1"), "key2": .string("value2")],
             isDeferred: true
         )
         storage.cachedAttribution = deepLink
 
         let cached = storage.cachedAttribution
         XCTAssertNotNil(cached)
-        XCTAssertEqual(cached?.customParams["key1"] as? String, "value1")
-        XCTAssertEqual(cached?.customParams["key2"] as? String, "value2")
+        XCTAssertEqual(cached?.customParams["key1"]?.stringValue, "value1")
+        XCTAssertEqual(cached?.customParams["key2"]?.stringValue, "value2")
     }
 
     func testEmptyCustomParamsRoundTrip() {

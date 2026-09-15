@@ -38,9 +38,11 @@ Recreate your Firebase Dynamic Links as WarpLink links via the [dashboard](https
 
 ### Via API
 
+The REST API takes an **API key** with `links:write`, not the SDK key you pass to `configure()`.
+
 ```bash
 curl -X POST https://api.warplink.app/v1/links \
-  -H "Authorization: Bearer wl_live_your_api_key_here_abcdefgh" \
+  -H "Authorization: Bearer wl_live_YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "destination_url": "https://yourapp.com/product/123",
@@ -68,7 +70,7 @@ Or in `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.0.1")
+    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.1.0")
 ]
 ```
 
@@ -93,6 +95,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
 **WarpLink:**
 
+`configure()` takes an **SDK key**, created in the dashboard under **API Keys** > **SDK key**. An API key is a separate credential: it resolves deep links but cannot record installs.
+
 ```swift
 import WarpLink
 
@@ -102,7 +106,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        WarpLink.configure(apiKey: "wl_live_your_api_key_here_abcdefgh")
+        WarpLink.configure(apiKey: "wl_live_yoursdkkeyhere000000000000000000")
         return true
     }
 }
@@ -116,7 +120,7 @@ import WarpLink
 @main
 struct MyApp: App {
     init() {
-        WarpLink.configure(apiKey: "wl_live_your_api_key_here_abcdefgh")
+        WarpLink.configure(apiKey: "wl_live_yoursdkkeyhere000000000000000000")
     }
 
     var body: some Scene {
@@ -250,7 +254,7 @@ After migration, verify each flow works:
 - [ ] **Universal Links open the app** — tap a WarpLink URL on a physical device
 - [ ] **Deep link resolves** — `handleDeepLink` returns a `WarpLinkDeepLink` with the correct destination
 - [ ] **Custom parameters are preserved** — check `deepLink.customParams` matches what you configured
-- [ ] **Deferred deep links work** — delete app, click link, reinstall, launch, verify `checkDeferredDeepLink` returns match
+- [ ] **Deferred deep links work** — delete the app, click a link, install, launch, verify the match arrives. The completion marker is scoped to one install, so a plain delete-and-reinstall re-runs attribution. See [Troubleshooting](troubleshooting.md#first-launch-already-completed).
 - [ ] **AASA is correct** — `curl https://aplnk.to/.well-known/apple-app-site-association` shows your app's bundle ID and team ID
 - [ ] **Error handling works** — test with an invalid URL, expired link, and no connectivity
 - [ ] **Old Firebase code is fully removed** — no remaining `import FirebaseCore` or `import FirebaseDynamicLinks`

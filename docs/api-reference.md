@@ -15,7 +15,7 @@ public final class WarpLink
 #### `sdkVersion`
 
 ```swift
-public static let sdkVersion: String // "1.0.1"
+public static let sdkVersion: String // "1.1.0"
 ```
 
 The current SDK version string.
@@ -28,6 +28,22 @@ public static var isConfigured: Bool { get }
 
 Whether the SDK has been configured via `configure(apiKey:options:)`. Thread-safe.
 
+#### `isApiKeyValid`
+
+```swift
+public static var isApiKeyValid: Bool? { get }
+```
+
+The server's API-key validation verdict: `true` (valid), `false` (rejected/revoked), or `nil` (not yet determined). The SDK also logs a `[WarpLink] WARNING:` line when the key is rejected, even when `debugLogging` is off. Thread-safe.
+
+#### `attributionResult`
+
+```swift
+public static var attributionResult: WarpLinkDeepLink? { get }
+```
+
+The cached deep link from the last completed deferred attribution check, or `nil`. Thread-safe.
+
 ### Methods
 
 #### `configure(apiKey:options:)`
@@ -39,31 +55,60 @@ public static func configure(
 )
 ```
 
-Configure the SDK with your API key. Must be called before any other SDK methods.
+Configure the SDK with your SDK key. Must be called before any other SDK methods. Call once, as early as possible.
 
 **Parameters:**
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `apiKey` | `String` | Your WarpLink API key (e.g., `wl_live_xxx...`). Must match the format `wl_live_` or `wl_test_` followed by 32 alphanumeric characters. |
-| `options` | `WarpLinkOptions?` | Optional configuration overrides. Defaults to `nil` (uses default options). |
+| `apiKey` | `String` | Your WarpLink **SDK key**, not an API key. Must match `wl_live_`/`wl_test_` + 32 alphanumeric characters. An API key resolves links but cannot record install attribution. |
+| `options` | `WarpLinkOptions?` | Optional configuration. Defaults to all-features-on with no `onLink`. |
 
 **Behavior:**
-- Validates API key format locally. If invalid, logs a warning (when `debugLogging` is enabled) and returns without configuring.
-- On valid format, initializes internal components and performs async server-side API key validation via `/sdk/validate`.
-- Server validation result is cached for 24 hours to avoid repeated network calls.
+- Validates the SDK key format locally. If invalid, it reports `WarpLinkError.invalidApiKeyFormat` to `options.onLink`, always logs a warning, and returns without configuring.
+- Initializes internal components and performs async server-side validation via `/sdk/validate`, caching the result for 24 hours. The validate response also supplies the org's verified link domains, which the SDK caches so custom-domain Universal Links resolve.
+- Establishes the set of link domains synchronously: `aplnk.to`, plus `options.linkDomains`, plus the `WarpLinkDomains` Info.plist array. The server's list is added to that set when it arrives. Declare your custom domain in one of the two local places if a link on it has to resolve on a first launch, before the network has answered.
+- If `options.autoDeferredCheck` is `true` (default), runs the deferred deep link check and routes the result to `options.onLink`.
 
 **Example:**
 
 ```swift
-// Basic configuration
-WarpLink.configure(apiKey: "wl_live_abcdefghijklmnopqrstuvwxyz012345")
-
-// With options
 WarpLink.configure(
-    apiKey: "wl_live_abcdefghijklmnopqrstuvwxyz012345",
-    options: WarpLinkOptions(debugLogging: true)
+    apiKey: "wl_live_yoursdkkeyhere000000000000000000",
+    options: WarpLinkOptions(onLink: { result in /* cold, warm, or deferred */ })
 )
+```
+
+---
+
+#### `open(_:)`
+
+```swift
+@discardableResult
+public static func open(_ url: URL) -> Bool
+```
+
+Deliver a `URL` to the SDK (host one-liner, e.g. SwiftUI `.onOpenURL`). Resolves the link and routes the result to `onLink`. Returns `true` if the URL was a WarpLink link the SDK will handle: a WarpLink domain **and** a path of exactly one segment, which is what a slug always is. No-op (returns `false`) when `autoDeepLinkHandling` is disabled, the URL is not on a WarpLink domain, or the path has more than one segment. Universal Links are registered for the whole domain, so pass every URL here and route the ones that return `false` with your own router.
+
+```swift
+.onOpenURL { WarpLink.open($0) }
+```
+
+---
+
+#### `continue(_:)`
+
+```swift
+@discardableResult
+public static func `continue`(_ userActivity: NSUserActivity) -> Bool
+```
+
+Deliver an `NSUserActivity` (Universal Link) to the SDK. Extracts `webpageURL` and forwards to `open(_:)`.
+
+```swift
+func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+    WarpLink.continue(userActivity)
+}
 ```
 
 ---
@@ -77,43 +122,9 @@ public static func handleDeepLink(
 )
 ```
 
-Handle an incoming Universal Link URL and resolve it to a deep link.
+Resolve an incoming Universal Link URL and get the result inline (manual/advanced use). Independent of `autoDeepLinkHandling`. **Completion is always called on the main thread.**
 
-**Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `url` | `URL` | The Universal Link URL received by the app. |
-| `completion` | `(Result<WarpLinkDeepLink, WarpLinkError>) -> Void` | Called with the resolved deep link or an error. **Always called on the main thread.** |
-
-**Errors:**
-- `.notConfigured` — SDK not configured yet
-- `.invalidURL` — URL is not a recognized WarpLink domain (`aplnk.to`)
-- `.linkNotFound` — Link does not exist or is inactive
-- `.networkError(Error)` — Network request failed
-- `.serverError(statusCode:message:)` — API returned an error
-- `.invalidApiKey` — API key rejected by server
-- `.decodingError(Error)` — Response parsing failed
-
-**Example:**
-
-```swift
-// SwiftUI
-.onOpenURL { url in
-    WarpLink.handleDeepLink(url) { result in
-        switch result {
-        case .success(let deepLink):
-            print("Link ID: \(deepLink.linkId)")
-            print("Destination: \(deepLink.destination)")
-            if let deepLinkUrl = deepLink.deepLinkUrl {
-                print("Deep link URL: \(deepLinkUrl)")
-            }
-        case .failure(let error):
-            print("Error: \(error.localizedDescription)")
-        }
-    }
-}
-```
+**Errors:** `.notConfigured`, `.invalidURL`, `.linkNotFound`, `.passwordRequired`, `.networkError`, `.serverError`, `.invalidApiKey`, `.decodingError`.
 
 ---
 
@@ -125,49 +136,36 @@ public static func checkDeferredDeepLink(
 )
 ```
 
-Check for a deferred deep link on first launch. Returns `nil` in the success case if no match was found.
-
-**Parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `completion` | `(Result<WarpLinkDeepLink?, WarpLinkError>) -> Void` | Called with the matched deep link (or `nil` if no match), or an error. **Always called on the main thread.** |
+Run the deferred deep link check on demand (called for you when `autoDeferredCheck` is on). Returns `.success(nil)` when there is no match. **Completion is always called on the main thread.**
 
 **Behavior:**
-- On first launch: collects device signals (screen size, timezone, language, IDFV), sends them to the attribution API, and returns the match result.
-- On subsequent launches: returns the cached result from the first check without a network call.
-- The matched deep link has `isDeferred: true` and includes `matchType` and `matchConfidence`.
+- Runs the attribution match until it completes (a definitive server response). After completion, returns the cached result without a network call.
+- A failed attempt (e.g. offline) is not treated as complete, so a later call retries. The completion marker is scoped to one install, so a reinstall runs the check again and reports itself with `is_reinstall`.
+- A matched deep link has `isDeferred: true` plus `matchType`, `matchConfidence`, and `matchGuaranteed`.
 
-**Errors:**
-- `.notConfigured` — SDK not configured yet
-- `.networkError(Error)` — Network request failed
-- `.serverError(statusCode:message:)` — API returned an error
-- `.invalidApiKey` — API key rejected by server
-- `.decodingError(Error)` — Response parsing failed
+**Errors:** `.notConfigured`, `.networkError`, `.serverError`, `.invalidApiKey`, `.decodingError`.
 
-**Example:**
+---
+
+## WarpLinkAppDelegate / WarpLinkSceneDelegate
+
+Drop-in host delegates that forward incoming Universal Links to the SDK. No swizzling. Use directly, subclass, or copy the forwarding lines into your own delegate.
 
 ```swift
-WarpLink.checkDeferredDeepLink { result in
-    switch result {
-    case .success(let deepLink):
-        if let deepLink = deepLink {
-            print("Deferred match: \(deepLink.destination)")
-            print("Confidence: \(deepLink.matchConfidence ?? 0)")
-        } else {
-            print("No deferred deep link")
-        }
-    case .failure(let error):
-        print("Error: \(error.localizedDescription)")
-    }
-}
+open class WarpLinkAppDelegate: UIResponder, UIApplicationDelegate
+open class WarpLinkSceneDelegate: UIResponder, UIWindowSceneDelegate
 ```
+
+- `WarpLinkAppDelegate` forwards `application(_:continue:restorationHandler:)` and `application(_:open:options:)`.
+- `WarpLinkSceneDelegate` forwards `scene(_:willConnectTo:options:)` (cold launch), `scene(_:continue:)` (warm), and `scene(_:openURLContexts:)`.
+
+Available on UIKit platforms.
 
 ---
 
 ## WarpLinkOptions
 
-Configuration options for the SDK.
+Configuration options for the SDK. Every feature is on by default (opt-out).
 
 ```swift
 public struct WarpLinkOptions: Sendable
@@ -177,9 +175,12 @@ public struct WarpLinkOptions: Sendable
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `apiEndpoint` | `String` | `"https://api.warplink.app/v1"` | The API endpoint URL. Override for testing or custom deployments. |
-| `debugLogging` | `Bool` | `false` | Enable debug logging with `[WarpLink]` prefix in the console. |
-| `matchWindowHours` | `Int` | `72` | The match window in hours for deferred deep link attribution. |
+| `apiEndpoint` | `String` | `"https://api.warplink.app/v1"` | The API endpoint URL. |
+| `debugLogging` | `Bool` | `false` | Enable `[WarpLink]` console logging. |
+| `autoDeepLinkHandling` | `Bool` | `true` | Auto-resolve links from `open(_:)`/`continue(_:)` and route to `onLink`. Disable to use `handleDeepLink` yourself. |
+| `autoDeferredCheck` | `Bool` | `true` | Auto-run the deferred check from `configure()` and route to `onLink`. Disable to call `checkDeferredDeepLink` yourself. |
+| `linkDomains` | `[String]` | `[]` | Your link domains, e.g. `["links.yourbrand.com"]`. Recognized the moment `configure()` returns, so a link on a custom domain resolves on a first launch. Added to `aplnk.to` and to the server's list, never substituted for them. Bare hosts and full URLs both work. |
+| `onLink` | `(@Sendable (Result<WarpLinkDeepLink?, WarpLinkError>) -> Void)?` | `nil` | Single sink for all resolved links (cold, warm, deferred). Only a match or an error is delivered; a deferred no-match is suppressed, not dispatched to the sink. |
 
 ### Initializer
 
@@ -187,33 +188,49 @@ public struct WarpLinkOptions: Sendable
 public init(
     apiEndpoint: String = "https://api.warplink.app/v1",
     debugLogging: Bool = false,
-    matchWindowHours: Int = 72
+    autoDeepLinkHandling: Bool = true,
+    autoDeferredCheck: Bool = true,
+    linkDomains: [String] = [],
+    onLink: (@Sendable (Result<WarpLinkDeepLink?, WarpLinkError>) -> Void)? = nil
 )
 ```
 
 **Example:**
 
 ```swift
-// Default options
-let options = WarpLinkOptions()
+// The common shape: just a sink.
+let options = WarpLinkOptions(onLink: handleLink)
 
-// Custom options
-let options = WarpLinkOptions(
-    debugLogging: true,
-    matchWindowHours: 48
-)
+// Opt out of everything and drive it manually.
+let manual = WarpLinkOptions(autoDeepLinkHandling: false, autoDeferredCheck: false)
 
-WarpLink.configure(apiKey: "wl_live_...", options: options)
+// A custom link domain, known before the network answers.
+let custom = WarpLinkOptions(linkDomains: ["links.yourbrand.com"], onLink: handleLink)
 ```
+
+### Declaring link domains in the Info.plist
+
+The alternative to `linkDomains`, for teams that keep configuration out of code.
+Add a `WarpLinkDomains` array of strings to your target's Info.plist:
+
+```xml
+<key>WarpLinkDomains</key>
+<array>
+    <string>links.yourbrand.com</string>
+</array>
+```
+
+Both sources are read, and both are additive. Each entry may be a bare host or a
+full URL; entries are trimmed and lowercased, and a URL is reduced to its host.
 
 ---
 
 ## WarpLinkDeepLink
 
-Resolved deep link data returned by the SDK.
+Resolved deep link data returned by the SDK. Conforms to `Codable`, `Sendable`, and `Equatable`.
 
 ```swift
-public struct WarpLinkDeepLink
+public struct WarpLinkDeepLink: Codable, Sendable, Equatable
 ```
 
 ### Properties
@@ -222,31 +239,53 @@ public struct WarpLinkDeepLink
 |----------|------|-------------|
 | `linkId` | `String` | The unique identifier of the link. |
 | `destination` | `String` | The resolved destination URL. |
-| `deepLinkUrl` | `String?` | The iOS-specific deep link URL (e.g., `myapp://path`), if configured on the link. |
-| `customParams` | `[String: Any]` | Custom parameters attached to the link. See note below. |
+| `deepLinkUrl` | `String?` | The iOS-specific deep link URL (e.g., `myapp://path`), if configured. |
+| `customParams` | `[String: JSONValue]` | Custom parameters attached to the link. |
 | `isDeferred` | `Bool` | Whether this deep link was resolved via deferred attribution. |
 | `matchType` | `MatchType?` | The type of attribution match (`deterministic` or `probabilistic`). |
 | `matchConfidence` | `Double?` | The confidence score of the attribution match (0.0 to 1.0). |
+| `matchGuaranteed` | `Bool` | `true` only when the match was deterministic. Gate anything sensitive (auto sign-in, showing personal data) on this rather than on a confidence threshold: a probabilistic match is a best guess from a network-shaped fingerprint and can name the wrong user. |
 
 ### Working with `customParams`
 
-`customParams` is typed as `[String: Any]` because link parameters can contain mixed types (strings, numbers, booleans, nested objects). This type does not conform to `Codable`.
-
-Use safe casting when accessing values:
+`customParams` is `[String: JSONValue]`. `JSONValue` is a `Codable`/`Sendable` JSON wrapper — this is what makes `WarpLinkDeepLink` persistable and thread-safe (the old `[String: Any]` was neither). Read values with the typed accessors:
 
 ```swift
-WarpLink.handleDeepLink(url) { result in
-    if case .success(let deepLink) = result {
-        // Safe casting for custom parameters
-        if let productId = deepLink.customParams["product_id"] as? String {
-            showProduct(id: productId)
-        }
-        if let discount = deepLink.customParams["discount"] as? Double {
-            applyDiscount(discount)
-        }
-    }
+if case .success(let deepLink?) = result {
+    let productId = deepLink.customParams["product_id"]?.stringValue
+    let discount  = deepLink.customParams["discount"]?.doubleValue
+    let featured  = deepLink.customParams["featured"]?.boolValue
 }
 ```
+
+---
+
+## JSONValue
+
+A `Codable`/`Sendable` JSON value type used for `customParams`.
+
+```swift
+public enum JSONValue: Codable, Sendable, Equatable {
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case null
+}
+```
+
+### Accessors
+
+| Accessor | Returns |
+|----------|---------|
+| `stringValue` | `String?` |
+| `intValue` | `Int?` (coerces from `.double`) |
+| `doubleValue` | `Double?` (coerces from `.int`) |
+| `boolValue` | `Bool?` |
+| `arrayValue` | `[JSONValue]?` |
+| `objectValue` | `[String: JSONValue]?` |
 
 ---
 
@@ -258,12 +297,10 @@ The type of attribution match used to resolve a deferred deep link.
 public enum MatchType: String, Codable, Sendable
 ```
 
-### Cases
-
 | Case | Description |
 |------|-------------|
-| `.deterministic` | Matched via IDFV (re-engagement). Confidence is always 1.0. |
-| `.probabilistic` | Matched via enriched fingerprint (first-install). Confidence varies by time window. |
+| `.deterministic` | Matched via IDFV (re-engagement). Confidence is always 1.0 and `matchGuaranteed` is `true`. |
+| `.probabilistic` | Matched via server-side fingerprint (first-install). Confidence is 0.20 to 0.85 by time since click, reduced further when the fingerprint bucket was ambiguous or the click IP was widely shared. `matchGuaranteed` is always `false`. |
 
 See [Attribution](attribution.md) for details on confidence scores.
 
@@ -277,33 +314,23 @@ Typed errors for all SDK operations. Conforms to `Error` and `LocalizedError`.
 public enum WarpLinkError: Error, LocalizedError
 ```
 
-### Cases
-
 | Case | Description |
 |------|-------------|
 | `.notConfigured` | SDK used before `configure()` was called. |
-| `.invalidApiKeyFormat` | API key format is invalid (must be `wl_live_` or `wl_test_` + 32 alphanumeric characters). |
-| `.invalidApiKey` | API key was rejected by the server (revoked or incorrect). |
+| `.invalidApiKeyFormat` | SDK key format is invalid (`wl_live_`/`wl_test_` + 32 alphanumeric). |
+| `.invalidApiKey` | SDK key was rejected by the server. It was revoked, mistyped, or is an API key. |
 | `.networkError(Error)` | Network request failed with an underlying error. |
 | `.serverError(statusCode: Int, message: String)` | API returned an error response. |
-| `.invalidURL` | The URL is not a valid WarpLink Universal Link (not an `aplnk.to` domain). |
+| `.invalidURL` | The URL is not a valid WarpLink Universal Link. |
 | `.linkNotFound` | The link was not found (404) or is no longer active. |
+| `.passwordRequired` | The link is password protected, so it resolves to no destination and no platform URLs. |
 | `.decodingError(Error)` | Response parsing failed. |
 
-Each case provides a localized description via `errorDescription`:
-
-```swift
-if case .serverError(let statusCode, let message) = error {
-    print("Server error \(statusCode): \(message)")
-}
-// Or use the localized description
-print(error.localizedDescription)
-```
-
-See [Error Handling](error-handling.md) for recommended recovery actions for each case.
+Each case provides a localized description via `errorDescription`. See [Error Handling](error-handling.md) for recommended recovery actions.
 
 ## Thread Safety
 
-- `WarpLink.isConfigured` is thread-safe (protected by `NSLock`).
-- All completion handlers (`handleDeepLink`, `checkDeferredDeepLink`) are dispatched to the **main thread**.
+- `WarpLink.isConfigured`, `isApiKeyValid`, and `attributionResult` are thread-safe (protected by `NSLock`).
+- `onLink` and all completion handlers (`handleDeepLink`, `checkDeferredDeepLink`) are dispatched to the **main thread**.
+- The SDK adds a light dedupe so the same URL delivered twice in a short window (auto delegate + a manual call) dispatches once.
 - `configure()` can be called from any thread, but should be called once during app initialization.

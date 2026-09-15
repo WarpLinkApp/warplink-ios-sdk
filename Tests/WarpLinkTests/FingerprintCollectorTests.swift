@@ -10,95 +10,78 @@ final class FingerprintCollectorTests: XCTestCase {
         collector = FingerprintCollector()
     }
 
-    func testCollectFingerprintReturnsNonEmptyAcceptLanguage() {
-        let exp = expectation(description: "completion")
-        collector.collectFingerprint { result in
-            switch result {
-            case .success(let signals):
-                XCTAssertFalse(signals.acceptLanguage.isEmpty)
-            case .failure(let error):
-                XCTFail("Expected success, got \(error)")
-            }
-            exp.fulfill()
-        }
-        waitForExpectations(timeout: 2)
+    func testCollectReturnsRawPreferredLanguage() {
+        let signals = collector.collect()
+        XCTAssertEqual(signals.acceptLanguage, Locale.preferredLanguages.first ?? "")
     }
 
-    func testScreenDimensionsAreNonNegative() {
-        let exp = expectation(description: "completion")
-        collector.collectFingerprint { result in
-            switch result {
-            case .success(let signals):
-                XCTAssertGreaterThanOrEqual(signals.screenWidth, 0)
-                XCTAssertGreaterThanOrEqual(signals.screenHeight, 0)
-            case .failure(let error):
-                XCTFail("Expected success, got \(error)")
-            }
-            exp.fulfill()
-        }
-        waitForExpectations(timeout: 2)
+    func testAcceptLanguageIsSingleRawValueNotJoinedList() {
+        // Contract: send the raw first preferred language, not a comma-joined
+        // list. The server normalizes.
+        let signals = collector.collect()
+        XCTAssertFalse(
+            signals.acceptLanguage.contains(","),
+            "SDK must send a single raw preferred language, not a joined list"
+        )
     }
 
     func testTimezoneOffsetIsValidInteger() {
-        let exp = expectation(description: "completion")
-        collector.collectFingerprint { result in
-            switch result {
-            case .success(let signals):
-                // Valid timezone offsets range from -720 to +840 minutes
-                XCTAssertGreaterThanOrEqual(signals.timezoneOffset, -720)
-                XCTAssertLessThanOrEqual(signals.timezoneOffset, 840)
-            case .failure(let error):
-                XCTFail("Expected success, got \(error)")
-            }
-            exp.fulfill()
-        }
-        waitForExpectations(timeout: 2)
+        let signals = collector.collect()
+        // Valid timezone offsets range from -720 to +840 minutes.
+        XCTAssertGreaterThanOrEqual(signals.timezoneOffset, -720)
+        XCTAssertLessThanOrEqual(signals.timezoneOffset, 840)
+    }
+
+    func testTimezoneOffsetUsesJSConvention() {
+        // JS getTimezoneOffset() convention: sign-inverted minutes.
+        let signals = collector.collect()
+        XCTAssertEqual(signals.timezoneOffset, -(TimeZone.current.secondsFromGMT() / 60))
     }
 
     func testDeterminism() {
-        let exp1 = expectation(description: "first")
-        let exp2 = expectation(description: "second")
-        var first: DeviceSignals?
-        var second: DeviceSignals?
-
-        collector.collectFingerprint { result in
-            if case .success(let signals) = result {
-                first = signals
-            }
-            exp1.fulfill()
-        }
-
-        collector.collectFingerprint { result in
-            if case .success(let signals) = result {
-                second = signals
-            }
-            exp2.fulfill()
-        }
-
-        waitForExpectations(timeout: 2)
-        XCTAssertNotNil(first)
-        XCTAssertNotNil(second)
-        XCTAssertEqual(first?.acceptLanguage, second?.acceptLanguage)
-        XCTAssertEqual(first?.screenWidth, second?.screenWidth)
-        XCTAssertEqual(first?.screenHeight, second?.screenHeight)
-        XCTAssertEqual(first?.timezoneOffset, second?.timezoneOffset)
-        XCTAssertEqual(first?.userAgent, second?.userAgent)
+        let first = collector.collect()
+        let second = collector.collect()
+        XCTAssertEqual(first.acceptLanguage, second.acceptLanguage)
+        XCTAssertEqual(first.timezoneOffset, second.timezoneOffset)
     }
 
-    func testUserAgentMatchesSDKFormat() {
-        let exp = expectation(description: "completion")
-        collector.collectFingerprint { result in
-            switch result {
-            case .success(let signals):
-                XCTAssertTrue(
-                    signals.userAgent.hasPrefix("WarpLink-iOS/"),
-                    "Expected WarpLink-iOS/ prefix, got \(signals.userAgent)"
-                )
-            case .failure(let error):
-                XCTFail("Expected success, got \(error)")
-            }
-            exp.fulfill()
+    func testIdfvPropertyType() {
+        // idfv returns String? — on the macOS test host it may be nil, but the
+        // property must exist and return the correct type. If non-nil it should
+        // be a valid UUID.
+        let idfv: String? = collector.idfv
+        if let value = idfv {
+            XCTAssertFalse(value.isEmpty)
+            XCTAssertNotNil(UUID(uuidString: value), "IDFV should be a valid UUID")
         }
-        waitForExpectations(timeout: 2)
+    }
+
+    func testCollectsIANAZoneName() {
+        let signals = FingerprintCollector().collect()
+
+        // The server prefers the zone name: far more entropy than the offset,
+        // and it does not shift at a daylight-saving boundary.
+        XCTAssertFalse(signals.timezone.isEmpty)
+        XCTAssertEqual(signals.timezone, TimeZone.current.identifier)
+        // Ask Foundation whether it is a zone, rather than guessing from the
+        // shape of the string. The old test required a "/" or the exact word
+        // UTC, which is a claim about how the MACHINE is configured and not
+        // about the SDK: a GitHub macOS runner reports `GMT`, a real tzdb zone
+        // that the shape test rejected. `knownTimeZoneIdentifiers` is not the
+        // predicate either, because it contains GMT but NOT UTC.
+        XCTAssertNotNil(
+            TimeZone(identifier: signals.timezone),
+            "expected an identifier Foundation recognises as a zone, got \(signals.timezone)"
+        )
+    }
+
+    func testTimezoneOffsetSignIsTheJSConventionForANamedZone() {
+        // Two zones with no daylight saving, so the value is stable all year.
+        let kolkata = FingerprintCollector(timeZone: TimeZone(identifier: "Asia/Kolkata")!).collect()
+        XCTAssertEqual(kolkata.timezoneOffset, -330, "UTC+5:30 is -330 in the JS convention")
+        XCTAssertEqual(kolkata.timezone, "Asia/Kolkata")
+
+        let saoPaulo = FingerprintCollector(timeZone: TimeZone(identifier: "America/Sao_Paulo")!).collect()
+        XCTAssertEqual(saoPaulo.timezoneOffset, 180, "UTC-3 is +180 in the JS convention")
     }
 }

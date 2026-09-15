@@ -4,19 +4,34 @@ import UIKit
 #endif
 
 /// Raw device signals collected for server-side fingerprint computation.
+///
+/// Per the attribution contract, the SDK sends only `accept_language` (raw
+/// preferred language), `timezone_offset` (minutes, JS convention) and the IANA
+/// `timezone` name. The
+/// server derives the client IP and computes the fingerprint. User-Agent and
+/// screen dimensions are intentionally NOT collected — they never match across
+/// the browser/native-app and CSS-px/points boundaries.
 struct DeviceSignals {
     let acceptLanguage: String
-    let screenWidth: Int
-    let screenHeight: Int
     let timezoneOffset: Int
-    let userAgent: String
+    /// IANA zone name, e.g. "America/Toronto". Empty when unavailable.
+    let timezone: String
 }
 
 /// Collects device signals for attribution fingerprinting.
 ///
-/// Signals are sent raw to the server, which computes the fingerprint
-/// using the client IP + these signals. The SDK does NOT hash locally.
-class FingerprintCollector {
+/// Signals are sent raw to the server, which computes the fingerprint using the
+/// client IP + these signals. The SDK does NOT hash locally.
+final class FingerprintCollector {
+
+    private let timeZone: TimeZone
+
+    /// - Parameter timeZone: overridden by tests so the sign convention can be
+    ///   asserted for a named zone; CI runs at UTC, where a flipped sign is
+    ///   invisible.
+    init(timeZone: TimeZone = .current) {
+        self.timeZone = timeZone
+    }
 
     /// The device's Identifier for Vendor (IDFV), used for deterministic
     /// re-engagement matching. Always available on iOS (no ATT required).
@@ -29,54 +44,26 @@ class FingerprintCollector {
         #endif
     }
 
-    /// Collect device signals for attribution.
-    ///
-    /// - Parameter completion: Called with device signals or an error.
-    func collectFingerprint(
-        completion: @escaping (Result<DeviceSignals, WarpLinkError>) -> Void
-    ) {
-        let acceptLanguage = buildAcceptLanguage()
-        let timezoneOffset = computeTimezoneOffset()
-        let userAgent = "WarpLink-iOS/\(WarpLink.sdkVersion)"
-
-        collectScreenSize { width, height in
-            let signals = DeviceSignals(
-                acceptLanguage: acceptLanguage,
-                screenWidth: width,
-                screenHeight: height,
-                timezoneOffset: timezoneOffset,
-                userAgent: userAgent
-            )
-            completion(.success(signals))
-        }
+    /// Collect device signals for attribution. Synchronous — no UI access.
+    func collect() -> DeviceSignals {
+        DeviceSignals(
+            acceptLanguage: preferredLanguage(),
+            timezoneOffset: timezoneOffset(),
+            timezone: timeZone.identifier
+        )
     }
 
     // MARK: - Private
 
-    private func buildAcceptLanguage() -> String {
-        return Locale.preferredLanguages.joined(separator: ",")
+    /// Raw device preferred language (e.g. `"en-US"`). Server normalizes;
+    /// do NOT pre-normalize here.
+    private func preferredLanguage() -> String {
+        Locale.preferredLanguages.first ?? ""
     }
 
-    private func computeTimezoneOffset() -> Int {
-        let secondsFromGMT = TimeZone.current.secondsFromGMT()
-        return -(secondsFromGMT / 60)
-    }
-
-    private func collectScreenSize(
-        completion: @escaping (_ width: Int, _ height: Int) -> Void
-    ) {
-        #if canImport(UIKit)
-        if Thread.isMainThread {
-            let bounds = UIScreen.main.bounds
-            completion(Int(bounds.width), Int(bounds.height))
-        } else {
-            DispatchQueue.main.async {
-                let bounds = UIScreen.main.bounds
-                completion(Int(bounds.width), Int(bounds.height))
-            }
-        }
-        #else
-        completion(0, 0)
-        #endif
+    /// Timezone offset in minutes, JS `getTimezoneOffset()` convention
+    /// (sign-inverted, DST-aware): UTC+2 → -120.
+    private func timezoneOffset() -> Int {
+        -(timeZone.secondsFromGMT() / 60)
     }
 }

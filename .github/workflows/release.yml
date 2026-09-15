@@ -24,6 +24,18 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.tag || github.ref_name }}
+      # Consequence, by design: re-running this workflow via workflow_dispatch
+      # for a historical tag now fails, because the constant on that commit
+      # does not match it. v0.1.0 and v1.0.0 both report 0.1.0 over the wire,
+      # which is the defect this step exists to stop. A refusal here is the
+      # guard working, not a broken workflow.
+      - name: Refuse a tag that does not match sdkVersion
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          CONSTANT="$(sed -n 's/.*public static let sdkVersion = "\([^"]*\)".*/\1/p' Sources/WarpLink/WarpLink.swift)"
+          test -n "$CONSTANT" || { echo "sdkVersion literal not found in Sources/WarpLink/WarpLink.swift"; exit 1; }
+          test "v$CONSTANT" = "$TAG" || { echo "sdkVersion is $CONSTANT but the tag is $TAG"; exit 1; }
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:

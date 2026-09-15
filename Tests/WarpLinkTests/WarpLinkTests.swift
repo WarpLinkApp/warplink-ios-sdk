@@ -18,7 +18,10 @@ final class WarpLinkTests: XCTestCase {
     }
 
     func testConfigureSetsIsConfigured() {
-        WarpLink.configure(apiKey: "wl_test_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6")
+        WarpLink.configure(
+            apiKey: "wl_test_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
+            options: TestSupport.noAuto
+        )
         XCTAssertTrue(WarpLink.isConfigured)
     }
 
@@ -67,7 +70,8 @@ final class WarpLinkTests: XCTestCase {
         let options = WarpLinkOptions(
             apiEndpoint: "https://custom.api.com/v1",
             debugLogging: true,
-            matchWindowHours: 48
+            autoDeepLinkHandling: false,
+            autoDeferredCheck: false
         )
         WarpLink.configure(apiKey: "wl_test_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6", options: options)
         XCTAssertTrue(WarpLink.isConfigured)

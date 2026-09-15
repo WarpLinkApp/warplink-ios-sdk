@@ -89,7 +89,7 @@ final class HandleDeepLinkTests: XCTestCase {
             XCTAssertEqual(deepLink.linkId, "550e8400-e29b-41d4-a716-446655440000")
             XCTAssertEqual(deepLink.destination, "https://example.com")
             XCTAssertEqual(deepLink.deepLinkUrl, "myapp://page")
-            XCTAssertEqual(deepLink.customParams["promo"] as? String, "summer")
+            XCTAssertEqual(deepLink.customParams["promo"]?.stringValue, "summer")
             XCTAssertFalse(deepLink.isDeferred)
             XCTAssertEqual(deepLink.matchType, .deterministic)
             XCTAssertEqual(deepLink.matchConfidence, 1.0)
@@ -150,6 +150,7 @@ final class HandleDeepLinkTests: XCTestCase {
         waitForExpectations(timeout: 2)
     }
 
+    // conformance: WL-S17
     func testHandleDeepLinkNilIosUrl() {
         configureSDK()
         var json = validLinkJSON()
@@ -181,7 +182,7 @@ final class HandleDeepLinkTests: XCTestCase {
             )!
             return (response, Data())
         }
-        WarpLink.configure(apiKey: testApiKey)
+        WarpLink.configure(apiKey: testApiKey, options: TestSupport.noAuto)
     }
 
     private func mockResolveResponse(statusCode: Int, json: [String: Any]) {

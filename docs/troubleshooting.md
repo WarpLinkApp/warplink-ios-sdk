@@ -14,7 +14,7 @@ Verify that `applinks:aplnk.to` is added in your Xcode target under **Signing & 
 
 ### AASA not configured in dashboard
 
-Your iOS app must be registered in the WarpLink dashboard (**Settings > Apps**) with the correct bundle ID and team ID. WarpLink generates the AASA file automatically when you register the app.
+Your iOS app must be registered in the WarpLink dashboard (**Apps**) with the correct bundle ID and team ID. WarpLink generates the AASA file automatically when you register the app.
 
 ### Testing on simulator
 
@@ -26,7 +26,7 @@ Ensure the link exists and is active in the WarpLink dashboard. Expired or disab
 
 ### Domain mismatch
 
-The SDK only recognizes `aplnk.to` as a WarpLink domain. If you're testing with a different domain, the SDK will return `.invalidURL`.
+The SDK recognizes `aplnk.to`, any domain you declare locally (`WarpLinkOptions.linkDomains` or the `WarpLinkDomains` Info.plist array), and your org's verified custom domains fetched from `/sdk/validate` on `configure()`. A URL on a host that isn't in that set returns `.invalidURL`. If you're testing a custom domain, declare it locally and confirm it is verified and live in the dashboard.
 
 ### Apple Developer portal
 
@@ -48,20 +48,27 @@ Look for your app's bundle ID and team ID in the `applinks.details` array. If th
 
 **Possible Causes and Solutions:**
 
+### An API key was used instead of an SDK key
+
+Install attribution requires an **SDK key**. An API key cannot record installs, whatever scopes it holds, so the attribution request is rejected with `403` and surfaces as `.invalidApiKey`. Telltale symptom: deep links resolve normally, `isApiKeyValid` is `true`, but no installs appear in your dashboard.
+
+Create one in the dashboard under **API Keys** > **SDK key**, then pass it to `WarpLink.configure()`.
+
 ### SDK not configured
 
 `checkDeferredDeepLink` returns `.failure(.notConfigured)` if called before `WarpLink.configure()`. Ensure `configure()` runs before the deferred deep link check.
 
-### First launch already consumed
+### First launch already completed
 
-The SDK uses UserDefaults to track first launch. If the first launch check has already been consumed (either by a previous call or because UserDefaults persisted across a reinstall), the SDK returns the cached result.
+The SDK marks attribution **completed** only on a definitive server response, and that marker is scoped to one install. Within an install, every later launch returns the cached result instead of re-attributing. A failed attempt (for example, offline) is not marked complete, so the SDK retries on the next launch.
 
-To test deferred deep links:
+Deleting the app clears the marker, so a reinstall runs the check again. It is reported with `is_reinstall: true`, since a separate Keychain marker remembers that the device was attributed before. That marker never blocks a check.
+
+To re-test deferred deep links:
 1. Delete the app from the device
-2. Reset UserDefaults (or use a fresh device/simulator profile)
-3. Click a WarpLink URL in Safari
-4. Install the app via Xcode
-5. Launch and check
+2. Click a WarpLink URL in Safari
+3. Install the app via Xcode
+4. Launch and check
 
 ### Network error
 
@@ -71,35 +78,36 @@ If there's no network connectivity on first launch, the attribution request fail
 
 ```swift
 WarpLink.configure(
-    apiKey: "wl_live_your_api_key_here_abcdefgh",
+    apiKey: "wl_live_yoursdkkeyhere000000000000000000",
     options: WarpLinkOptions(debugLogging: true)
 )
 ```
 
 Look for `[WarpLink]` messages in the Xcode console:
-- `"First launch — collecting device signals for attribution"` — attribution check started
-- `"Not first launch, returning cached attribution"` — not first launch
-- `"Deferred deep link matched: <linkId>"` — match found
-- `"No deferred deep link match"` — no match found
-- `"Attribution match failed: ..."` — network or server error
+- `"First launch: collecting device signals for attribution"`: attribution check started
+- `"Retrying deferred attribution (prior attempt did not complete)"`: retry after a failed attempt
+- `"Attribution already complete for this install, returning cached result"`: attribution already done
+- `"Deferred deep link matched: <linkId>"`: match found
+- `"No deferred deep link match"`: no match found
+- `"Attribution match failed (will retry next launch): ..."`: network or server error
 
 ---
 
-## 3. API Key Validation Fails
+## 3. SDK Key Validation Fails
 
-**Symptoms:** Debug log shows `"API key validation failed"` or `"Invalid API key format"`.
+**Symptoms:** Debug log shows `"WARNING: API key rejected by server (invalid or revoked)."` or `"WARNING: Invalid API key format: wl_live_****xxxx"`.
 
 **Possible Causes and Solutions:**
 
 ### Wrong format
 
-API keys must start with `wl_live_` (production) or `wl_test_` (test), followed by exactly 32 alphanumeric characters. Example: `wl_live_abcdefghijklmnopqrstuvwxyz012345`.
+SDK keys start with `wl_live_` followed by exactly 32 alphanumeric characters. Example: `wl_live_yoursdkkeyhere000000000000000000`.
 
-If the format is wrong, `configure()` silently returns without configuring the SDK. Enable `debugLogging` to see the warning.
+If the format is wrong, `configure()` dispatches `WarpLinkError.invalidApiKeyFormat` to your `onLink` sink and always logs a `[WarpLink] WARNING:` line (even without `debugLogging`). The SDK stays unconfigured.
 
 ### Key revoked
 
-Check the [WarpLink dashboard](https://warplink.app) under **Settings > API Keys** to verify your key is active. Generate a new key if needed.
+Check the [WarpLink dashboard](https://warplink.app) under **API Keys** to verify your key is active. Generate a new SDK key if needed.
 
 ### Network issue
 
@@ -115,22 +123,15 @@ Server-side validation requires network connectivity. The SDK caches a successfu
 
 ### Match window too long
 
-A longer match window means more time for IP addresses and network conditions to change. Try reducing it:
-
-```swift
-WarpLink.configure(
-    apiKey: "wl_live_your_api_key_here_abcdefgh",
-    options: WarpLinkOptions(matchWindowHours: 24)
-)
-```
+A longer match window means more time for IP addresses and network conditions to change, which lowers probabilistic confidence. The match window is server-side, set per link in the dashboard (there is no client-side setting). Shorten it there if you want tighter, higher-confidence matches.
 
 ### Shared IP / VPN
 
 Users on shared networks (corporate VPNs, university Wi-Fi, carrier-grade NAT) may produce lower-quality fingerprints. This is inherent to probabilistic matching.
 
-### JavaScript interstitial blocked
+### Time zone or language changes
 
-If the user's browser blocks JavaScript on the redirect page, the click-side signals are limited to IP and User-Agent. This reduces fingerprint quality and match confidence.
+The enriched fingerprint uses the device's preferred language and timezone offset. A user who changes either between click and install (or crosses a timezone) may match with lower confidence.
 
 ---
 
@@ -140,25 +141,15 @@ If the user's browser blocks JavaScript on the redirect page, the click-side sig
 
 **Possible Causes and Solutions:**
 
-### URL is not an `aplnk.to` domain
+### URL host is not one of your WarpLink domains
 
-The SDK currently only recognizes `aplnk.to` as a WarpLink domain. URLs with other hosts (including custom domains) will return `.invalidURL`.
+The SDK recognizes `aplnk.to`, the domains you declare locally, and your org's **verified custom domains** fetched from `/sdk/validate` on `configure()`. A URL whose host isn't in that set returns `.invalidURL` (and `open(_:)` returns `false`).
 
-**Workaround:** Check the URL host before calling `handleDeepLink`:
-
-```swift
-.onOpenURL { url in
-    guard url.host == "aplnk.to" else {
-        // Handle non-WarpLink URLs separately
-        return
-    }
-    WarpLink.handleDeepLink(url) { result in
-        // ...
-    }
-}
-```
-
-Custom domain support in the SDK is planned for a future release.
+If a custom-domain link isn't recognized:
+- **Declare the domain locally.** The server's list arrives over the network, so on a first launch, or on a launch with no connectivity, it is not there yet. Pass `WarpLinkOptions(linkDomains: ["links.yourbrand.com"])`, or add a `WarpLinkDomains` array of strings to your Info.plist. A declared domain works from the moment `configure()` returns.
+- Confirm the domain is **verified and live** in the dashboard (unverified domains aren't returned by the server, though a declared one still works).
+- Check the spelling. Entries are trimmed and lowercased, and a full URL is reduced to its host, but `www.` is significant: `www.yourbrand.com` and `yourbrand.com` are different hosts.
+- Make sure the domain is also listed in your **Associated Domains** entitlement (`applinks:go.yourbrand.com`), or iOS won't open your app for it in the first place.
 
 ---
 
@@ -196,7 +187,7 @@ curl -s https://aplnk.to/.well-known/apple-app-site-association | python3 -m jso
 
 ### If your app is missing
 
-Register your iOS app in the WarpLink dashboard (**Settings > Apps**) with the correct bundle ID and team ID. The AASA file is regenerated automatically.
+Register your iOS app in the WarpLink dashboard (**Apps**) with the correct bundle ID and team ID. The AASA file is regenerated automatically.
 
 ---
 
@@ -206,7 +197,7 @@ Enable debug logging to trace SDK behavior:
 
 ```swift
 WarpLink.configure(
-    apiKey: "wl_live_your_api_key_here_abcdefgh",
+    apiKey: "wl_live_yoursdkkeyhere000000000000000000",
     options: WarpLinkOptions(debugLogging: true)
 )
 ```
@@ -216,24 +207,25 @@ WarpLink.configure(
 All SDK log messages are prefixed with `[WarpLink]` in the Xcode console.
 
 **Configuration:**
-- `"Configured with API key: wl_live_****xxxx"` — SDK initialized (key is masked)
-- `"API endpoint: https://api.warplink.app/v1"` — endpoint in use
-- `"Match window: 72 hours"` — deferred deep link match window
+- `"Configured with API key: wl_live_****xxxx"`: SDK initialized (key is masked)
+- `"API endpoint: https://api.warplink.app/v1"`: endpoint in use
 
 **API key validation:**
-- `"Validating API key..."` — server validation started
-- `"API key validated successfully"` — key is valid
-- `"API key validation cached, skipping"` — using cached validation (24hr)
+- `"Validating API key..."`: server validation started
+- `"API key validated successfully"`: key is valid
+- `"API key validation cached, skipping"`: using cached validation (24hr)
+- `"WARNING: API key rejected by server (invalid or revoked)..."`: printed even without debug logging; `WarpLink.isApiKeyValid` is `false`
 
 **Universal Links:**
-- `"Resolving Universal Link: https://aplnk.to/abc123"` — link resolution started
-- `"Resolved link: abc123 → https://..."` — link resolved successfully
+- `"Resolving Universal Link: https://aplnk.to/abc123"`: link resolution started
+- `"Resolved link: abc123"`: link resolved successfully
 
 **Deferred deep links:**
-- `"First launch — collecting device signals for attribution"` — first launch detected
-- `"Deferred deep link matched: <linkId>"` — attribution match found
-- `"No deferred deep link match"` — no match
-- `"Not first launch, returning cached attribution"` — returning cached result
+- `"First launch: collecting device signals for attribution"`: first launch detected
+- `"Retrying deferred attribution (prior attempt did not complete)"`: retry after a failed attempt
+- `"Deferred deep link matched: <linkId>"`: attribution match found
+- `"No deferred deep link match"`: no match
+- `"Attribution already complete for this install, returning cached result"`: returning cached result
 
 ---
 
@@ -258,6 +250,6 @@ If you manage provisioning profiles manually:
 
 ## Related Guides
 
-- [Integration Guide](integration-guide.md) — step-by-step setup
-- [Error Handling](error-handling.md) — handling SDK errors programmatically
-- [Deferred Deep Links](deferred-deep-links.md) — understanding deferred attribution
+- [Integration Guide](integration-guide.md): step-by-step setup
+- [Error Handling](error-handling.md): handling SDK errors programmatically
+- [Deferred Deep Links](deferred-deep-links.md): understanding deferred attribution

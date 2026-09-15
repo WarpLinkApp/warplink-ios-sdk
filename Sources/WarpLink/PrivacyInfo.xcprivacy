@@ -22,12 +22,31 @@
 				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
 			</array>
 		</dict>
+		<dict>
+			<!-- is_reinstall: one boolean saying whether this device has run the
+			     app before. Derived from a Keychain marker that outlives app
+			     deletion and a restore, sent with the attribution request and
+			     retained on the install record, so it is collected rather than
+			     used only to service the request. It routes a returning user
+			     back to the content they tapped; it is not app usage telemetry
+			     and is not joined to an identity. -->
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeOtherDataTypes</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
 	</array>
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
 		<dict>
-			<!-- Storage persists SDK state (first-launch flag, cached
-			     attribution, key-validation timestamp) in the app's own
+			<!-- Storage persists SDK state (cached attribution, cached
+			     domains, key-validation timestamp) in the app's own
 			     UserDefaults suite. Reason CA92.1: access info accessible
 			     only to the app itself. -->
 			<key>NSPrivacyAccessedAPIType</key>
@@ -35,6 +54,22 @@
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
 				<string>CA92.1</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- Boot time backs the deep-link dedupe window: the seconds
+			     elapsed between two dispatches of the same URL inside one
+			     run. Wall clock cannot measure it, because a backward step
+			     reads as "inside the window" and swallows repeat taps.
+			     Reason 35F9.1: measure time elapsed between events that
+			     occurred within the app. The value is compared in process,
+			     never persisted and never sent off device, which is what
+			     35F9.1 requires. -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>35F9.1</string>
 			</array>
 		</dict>
 	</array>

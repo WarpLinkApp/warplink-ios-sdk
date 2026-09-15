@@ -23,6 +23,11 @@ public enum WarpLinkError: Error, LocalizedError {
     /// The link was not found (404) or is no longer active.
     case linkNotFound
 
+    /// The link is password protected, so resolving it returns no destination
+    /// and no platform URLs. Send the user to the short URL in a browser, where
+    /// the password form lives.
+    case passwordRequired
+
     /// Response parsing failed.
     case decodingError(Error)
 
@@ -40,6 +45,8 @@ public enum WarpLinkError: Error, LocalizedError {
             return "The URL is not a valid WarpLink Universal Link."
         case .linkNotFound:
             return "The link was not found or is no longer active."
+        case .passwordRequired:
+            return "This link is password protected. Open it in a browser to enter the password."
         case .serverError(let statusCode, let message):
             return "Server error (\(statusCode)): \(message)"
         case .decodingError(let error):

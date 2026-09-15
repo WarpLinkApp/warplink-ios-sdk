@@ -5,7 +5,8 @@ import PackageDescription
 let package = Package(
     name: "warplink-ios-sdk",
     platforms: [
-        .iOS(.v15)
+        .iOS(.v15),
+        .macOS(.v11)
     ],
     products: [
         .library(
