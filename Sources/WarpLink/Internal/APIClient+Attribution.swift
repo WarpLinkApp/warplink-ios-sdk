@@ -128,6 +128,8 @@ extension APIClient {
             return decodeAttributionBody(data: data)
         case 401, 403:
             return .failure(.invalidApiKey)
+        case RateLimit.statusCode:
+            return .failure(RateLimit.error(for: http))
         default:
             return .failure(.serverError(statusCode: http.statusCode, message: "Server error"))
         }

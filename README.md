@@ -3,7 +3,7 @@
 [![CI](https://github.com/WarpLinkApp/warplink-ios-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/WarpLinkApp/warplink-ios-sdk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Deep linking, deferred deep linking, and install attribution for iOS, with [WarpLink](https://warplink.app).
+Deep linking, deferred deep linking, install attribution, and real-time analytics for iOS, with [WarpLink](https://warplink.app). Zero third-party dependencies.
 
 Opt-out by default: a single `configure(apiKey:options:)` with an `onLink` sink turns on deep linking, deferred deep linking, and attribution. You add one host hook to deliver incoming Universal Links. No method swizzling.
 
@@ -25,7 +25,7 @@ Opt-out by default: a single `configure(apiKey:options:)` with an `onLink` sink 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.1.0")
+    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.1.1")
 ]
 ```
 
@@ -77,7 +77,7 @@ struct MyApp: App {
 }
 ```
 
-`apiKey` takes an **SDK key**, created in the dashboard under **API Keys** > **SDK key**. API keys are a different credential: they resolve deep links but cannot record installs, so attribution fails silently if you paste one here.
+`apiKey` takes an **SDK key**, created in the dashboard under **Keys** > **SDK keys**. API keys are a different credential: they resolve deep links but cannot record installs, so attribution fails silently if you paste one here.
 
 The deferred deep link check fires automatically from `configure()`. There is nothing else to call for first-install attribution.
 
@@ -91,7 +91,7 @@ Pick whichever fits your app. All are one line.
 .onOpenURL { WarpLink.open($0) }
 ```
 
-**UIKit AppDelegate** — call the one-liner, or subclass the provided delegate:
+**UIKit AppDelegate**: call the one-liner, or subclass the provided delegate:
 
 ```swift
 func application(
@@ -127,8 +127,8 @@ WarpLinkOptions(
 
 The manual methods remain for advanced use:
 
-- `WarpLink.handleDeepLink(_:completion:)` — resolve a URL and get the result inline.
-- `WarpLink.checkDeferredDeepLink(completion:)` — run the deferred check on demand.
+- `WarpLink.handleDeepLink(_:completion:)`: resolve a URL and get the result inline.
+- `WarpLink.checkDeferredDeepLink(completion:)`: run the deferred check on demand.
 - `WarpLink.isWarpLinkURL(_:)` returns whether a URL is a WarpLink link, without resolving it.
 
 ### Checking a URL before you route it
@@ -148,11 +148,11 @@ if WarpLink.isWarpLinkURL(url) {
 ## Features
 
 - **Universal Link handling** with custom-domain support. Declare your domain in `WarpLinkOptions.linkDomains` or a `WarpLinkDomains` Info.plist array and it resolves from the first launch. See the [Integration Guide](docs/integration-guide.md).
-- **Deferred deep links** — route users to specific content even after an App Store install, with an attempt/retry model that survives an offline launch and runs again after a reinstall. See [Deferred Deep Links](docs/deferred-deep-links.md).
-- **Install attribution** — deterministic (IDFV) and probabilistic (server-side fingerprint) matching with confidence scores. See [Attribution](docs/attribution.md).
-- **No ATT required** — uses IDFV (exempt from App Tracking Transparency), no IDFA, no prompts.
-- **No swizzling** — you keep control of your delegates; the SDK never patches `UIApplication`.
-- **Zero dependencies** — built entirely on Apple frameworks (Foundation, UIKit, Security).
+- **Deferred deep links**: route users to specific content even after an App Store install, with an attempt/retry model that survives an offline launch and runs again after a reinstall. See [Deferred Deep Links](docs/deferred-deep-links.md).
+- **Install attribution**: probabilistic (server-side fingerprint) matching with confidence scores, plus an IDFV repeat check that recognizes an install asking again. See [Attribution](docs/attribution.md).
+- **No ATT required**: uses IDFV (exempt from App Tracking Transparency), no IDFA, no prompts.
+- **No swizzling**: you keep control of your delegates; the SDK never patches `UIApplication`.
+- **Zero dependencies**: built entirely on Apple frameworks (Foundation, UIKit, Security).
 
 ## Documentation
 
@@ -165,7 +165,7 @@ if WarpLink.isWarpLinkURL(url) {
 | [Error Handling](docs/error-handling.md) | Every error case with recommended recovery actions |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
 | [Firebase Migration](docs/firebase-migration.md) | Migrate from Firebase Dynamic Links to WarpLink |
-| [Architecture](docs/architecture.md) | How the SDK communicates with the WarpLink platform |
+| [Architecture](docs/architecture.md) | How the SDK communicates with WarpLink |
 
 ## Links
 

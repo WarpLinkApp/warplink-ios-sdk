@@ -85,7 +85,7 @@ final class TapIdHeaderTests: XCTestCase {
     private func match(tapId: String? = nil, timeout: TimeInterval? = nil) {
         client.matchAttribution(
             signals: signals,
-            sdkVersion: "1.1.0",
+            sdkVersion: "1.1.1",
             deviceId: nil,
             isReinstall: false,
             tapId: tapId,

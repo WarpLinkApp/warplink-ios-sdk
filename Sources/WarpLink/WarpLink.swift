@@ -45,7 +45,7 @@ public final class WarpLink {
     static let dedupeWindow: TimeInterval = 1.0
 
     /// The current SDK version.
-    public static let sdkVersion = "1.1.0"
+    public static let sdkVersion = "1.1.1"
 
     /// Whether the SDK has been configured via `configure(apiKey:options:)`.
     public static var isConfigured: Bool {

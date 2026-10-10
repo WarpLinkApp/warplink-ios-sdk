@@ -1,15 +1,15 @@
 # Architecture Overview
 
-How the WarpLink iOS SDK communicates with the WarpLink platform. This overview is aimed at SDK consumers — it explains the flows you need to understand, not internal infrastructure details.
+How the WarpLink iOS SDK communicates with the WarpLink platform. This overview is aimed at SDK consumers. It explains the flows you need to understand, not internal infrastructure details.
 
 ## Link Creation
 
 Developers create links via the [WarpLink dashboard](https://warplink.app) or the [REST API](https://api.warplink.app/v1). Each link has:
 
 - A **short URL** (e.g., `https://aplnk.to/abc123`)
-- A **destination URL** — where the user should end up
+- A **destination URL**: where the user should end up
 - An optional **iOS deep link URL** (e.g., `myapp://product/123`)
-- Optional **custom parameters** — arbitrary key-value data attached to the link
+- Optional **custom parameters**: arbitrary key-value data attached to the link
 
 When a link is created, it's stored in the database and cached at the edge for sub-10ms resolution globally.
 
@@ -67,7 +67,7 @@ User installs and opens the app
     → SDK collects device signals (preferred language, timezone offset, IDFV)
     → SDK calls POST /attribution/match with those raw signals
     → Server derives the IP, computes the fingerprint, compares to stored clicks
-    → If IDFV matches → deterministic match (confidence 1.0)
+    → If IDFV matches a stored install → that install, with its own match type and confidence
     → If fingerprint matches → probabilistic match (confidence varies by window)
     → SDK delivers a WarpLinkDeepLink with isDeferred: true to onLink
     → SDK marks attribution complete and caches the result
@@ -81,15 +81,15 @@ User installs and opens the app
 When you call `WarpLink.configure(apiKey:options:)`:
 
 1. **Format validation**: checks the SDK key matches `wl_live_` or `wl_test_` + 32 alphanumeric characters
-2. **Component setup** — creates internal API client, storage, fingerprint collector, and logger
-3. **Server validation** — async call to `/sdk/validate` to verify the key is active
-4. **Validation caching** — successful validation is cached for 24 hours (stored in UserDefaults) to avoid redundant network calls
+2. **Component setup**: creates internal API client, storage, fingerprint collector, and logger
+3. **Server validation**: async call to `/sdk/validate` to verify the key is active
+4. **Validation caching**: successful validation is cached for 24 hours (stored in UserDefaults) to avoid redundant network calls
 
 ### First Launch Detection (attempt vs complete)
 
 The SDK splits first-launch tracking into two states:
 
-- **completed** — a definitive server response (match or no-match) was received. Stored in a backup-excluded file inside the app container, so it is scoped to one install: it never comes back from a delete or from a restored backup, and a reinstall is attributed again. Once complete, `checkDeferredDeepLink` returns the cached result with no network call for the rest of that install.
+- **completed**: a definitive server response (match or no-match) was received. Stored in a backup-excluded file inside the app container, so it is scoped to one install: it never comes back from a delete or from a restored backup, and a reinstall is attributed again. Once complete, `checkDeferredDeepLink` returns the cached result with no network call for the rest of that install.
 - **attempted**: an attempt has started this install. Stored in the same backup-excluded file as the completion marker, so a restore does not carry it. If an attempt fails (e.g. offline) it is marked attempted but **not** completed, so the SDK retries on the next launch.
 
 A third marker, in the **Keychain**, records that this device has been attributed at least once. It outlives both a delete and a restore, and it gates nothing. Its only job is to set `is_reinstall` on the attribution request so a reinstall can be told apart from a first install later.
@@ -122,6 +122,6 @@ Once attribution completes, the result (match or no-match) is cached. This means
 
 ## Related Guides
 
-- [Deferred Deep Links](deferred-deep-links.md) — detailed deferred deep link flow
-- [Attribution](attribution.md) — matching tiers and confidence scores
-- [API Reference](api-reference.md) — all public types and methods
+- [Deferred Deep Links](deferred-deep-links.md): detailed deferred deep link flow
+- [Attribution](attribution.md): matching tiers and confidence scores
+- [API Reference](api-reference.md): all public types and methods

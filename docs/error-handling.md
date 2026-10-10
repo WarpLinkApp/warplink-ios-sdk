@@ -8,7 +8,7 @@ The WarpLink SDK uses the `WarpLinkError` enum for all error cases. Every error 
 
 **When:** Any SDK method is called before `WarpLink.configure(apiKey:options:)`.
 
-**Fix:** Call `configure()` during app initialization — in your SwiftUI `App.init()` or UIKit `application(_:didFinishLaunchingWithOptions:)`.
+**Fix:** Call `configure()` during app initialization, in your SwiftUI `App.init()` or UIKit `application(_:didFinishLaunchingWithOptions:)`.
 
 ```swift
 // Ensure this runs before any handleDeepLink or checkDeferredDeepLink calls
@@ -41,7 +41,7 @@ WarpLink.configure(apiKey: "wl_live_yoursdkkeyhere000000000000000000")
 
 ### `.networkError(Error)`
 
-**When:** A network request fails — no internet connectivity, DNS resolution failure, or request timeout.
+**When:** A network request fails: no internet connectivity, DNS resolution failure, or request timeout.
 
 **Fix:** Check device connectivity and show an offline state. A retry loop of your own is not the first thing to reach for here, because the SDK has already run one.
 
@@ -91,7 +91,7 @@ case .failure(let error):
         if statusCode == 429 {
             // Rate limited. Retry after a delay.
         } else if statusCode >= 500 {
-            // Server issue — retry later
+            // Server issue: retry later
         }
     }
 ```
@@ -152,11 +152,11 @@ case .passwordRequired:
 func handleWarpLinkError(_ error: WarpLinkError) {
     switch error {
     case .notConfigured:
-        // Programming error — configure SDK earlier in app lifecycle
+        // Programming error: configure SDK earlier in app lifecycle
         assertionFailure("WarpLink SDK not configured")
 
     case .invalidApiKeyFormat:
-        // Programming error — check API key format
+        // Programming error: check API key format
         assertionFailure("Invalid WarpLink API key format")
 
     case .invalidApiKey:
@@ -181,7 +181,7 @@ func handleWarpLinkError(_ error: WarpLinkError) {
         }
 
     case .invalidURL:
-        // URL is not a WarpLink URL — ignore or log
+        // URL is not a WarpLink URL: ignore or log
         break
 
     case .linkNotFound:
@@ -214,5 +214,5 @@ WarpLink.handleDeepLink(url) { result in
 
 ## Related Guides
 
-- [API Reference](api-reference.md) — `WarpLinkError` enum documentation
-- [Troubleshooting](troubleshooting.md) — common issues and solutions
+- [API Reference](api-reference.md): `WarpLinkError` enum documentation
+- [Troubleshooting](troubleshooting.md): common issues and solutions

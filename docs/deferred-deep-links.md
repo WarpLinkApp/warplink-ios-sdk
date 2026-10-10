@@ -9,7 +9,7 @@ With default options this is fully automatic: `configure()` runs the check and d
 Standard Universal Links only work when the app is already installed. Deferred deep links solve the "click before install" problem:
 
 1. User clicks a WarpLink URL (e.g., a product share link)
-2. App is not installed — user is redirected to the App Store
+2. App is not installed: user is redirected to the App Store
 3. User installs the app
 4. On first launch, the SDK matches the install to the original click
 5. Your app routes the user to the intended content (e.g., the shared product)
@@ -18,12 +18,12 @@ Without deferred deep links, the user would land on your default home screen wit
 
 ## How It Works
 
-1. **Click** — User taps a WarpLink URL in Safari or another app
-2. **Signal capture** — WarpLink's redirect page records the click's fingerprint signals (server-side, from the request) and the click's link
-3. **Store redirect** — User is redirected to the App Store
-4. **Install** — User installs and opens the app
-5. **First launch** — On `configure()`, the SDK collects raw device signals (preferred language, timezone, IDFV) and posts them to `/attribution/match`
-6. **Match result** — The server computes the fingerprint (adding the request IP) and returns a `WarpLinkDeepLink` with `isDeferred: true`, delivered to `onLink`
+1. **Click**: User taps a WarpLink URL in Safari or another app
+2. **Signal capture**: WarpLink's redirect page records the click's fingerprint signals (server-side, from the request) and the click's link
+3. **Store redirect**: User is redirected to the App Store
+4. **Install**: User installs and opens the app
+5. **First launch**: On `configure()`, the SDK collects raw device signals (preferred language, timezone, IDFV) and posts them to `/attribution/match`
+6. **Match result**: The server computes the fingerprint (adding the request IP) and returns a `WarpLinkDeepLink` with `isDeferred: true`, delivered to `onLink`
 
 The SDK sends only `accept_language` + `timezone` + `timezone_offset` + `app_bundle_id` + optional `device_id` (IDFV). The `timezone` field is the IANA zone name (e.g. `America/Toronto`), new in 1.1.0; the offset stays as the fallback key for older SDKs. See [Attribution](attribution.md) for the full signal set.
 
@@ -91,7 +91,7 @@ The match confidence depends on the matching method and time elapsed since the c
 
 | Scenario | Confidence | Match Type |
 |----------|------------|------------|
-| IDFV re-engagement (app was previously installed) | 1.0 | `deterministic` |
+| IDFV repeat check (app was previously installed) | The stored install's own score | The stored install's own type |
 | Fingerprint, < 1 hour since click | 0.85 | `probabilistic` |
 | Fingerprint, < 3 hours since click | 0.65 | `probabilistic` |
 | Fingerprint, < 6 hours since click | 0.50 | `probabilistic` |
@@ -100,7 +100,7 @@ The match confidence depends on the matching method and time elapsed since the c
 
 The fingerprint rows are the ceilings for the zone-name variant that an SDK collecting a zone name sends. The offset variant kept for older SDKs scores a band lower (0.80 down to 0.25), and the language-only fallback lower still (0.70 down to 0.20). Two multipliers then reduce whichever ceiling applied: 0.6 when more than one distinct link shared the fingerprint, and 0.6 / 0.9 / 1.0 for a carrier-grade-NAT, household-IPv4, or IPv6 click address. See [Attribution](attribution.md) for the full tables.
 
-**Recommendation:** Route to specific content when `matchConfidence` is above 0.5; show generic onboarding below it. Gate anything sensitive on `matchGuaranteed` instead, which is `true` only for a deterministic match: a probabilistic match is a best guess from a network-shaped fingerprint and can name the wrong user. The confidence bands are server-side, and the match window is configured per link in the dashboard (6 hours by default, 24 at most). There is no client-side match-window setting.
+**Recommendation:** Route to specific content when `matchConfidence` is above 0.5; show generic onboarding below it. `matchGuaranteed` is `true` only for a deterministic match; use it to pick the destination, not as a credential, since a probabilistic match is a best guess from a network-shaped fingerprint and can name the wrong user. Authenticate the user and check authorization separately before anything sensitive. The confidence bands are server-side, and the match window is configured per link in the dashboard (6 hours by default, 24 at most). There is no client-side match-window setting.
 
 ## Code Example
 
@@ -110,9 +110,9 @@ func handleLink(_ result: Result<WarpLinkDeepLink?, WarpLinkError>) {
     case .success(let deepLink?):
         let confidence = deepLink.matchConfidence ?? 0
 
-        // Identity work needs a deterministic match, not a high score.
+        // A guaranteed match is a reliable hint, never an identity.
         if deepLink.matchGuaranteed {
-            restoreAccount(from: deepLink)
+            personalizeOnboarding(from: deepLink)
         }
 
         if confidence > 0.5 {
@@ -123,7 +123,7 @@ func handleLink(_ result: Result<WarpLinkDeepLink?, WarpLinkError>) {
     case .success(nil):
         showOnboarding()                // deferred check ran, no match
     case .failure(let error):
-        // Offline on first launch, say — the SDK will retry next launch.
+        // Offline on first launch, say. The SDK will retry next launch.
         print("Deferred deep link error: \(error.localizedDescription)")
         showOnboarding()
     }
@@ -148,6 +148,6 @@ The server matches against the newest entry your app is allowed to claim, and re
 
 ## Related Guides
 
-- [Attribution](attribution.md) — the signal set and matching tiers
-- [Error Handling](error-handling.md) — handling deferred deep link errors
-- [Troubleshooting](troubleshooting.md) — common deferred deep link issues
+- [Attribution](attribution.md): the signal set and matching tiers
+- [Error Handling](error-handling.md): handling deferred deep link errors
+- [Troubleshooting](troubleshooting.md): common deferred deep link issues

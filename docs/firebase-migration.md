@@ -70,7 +70,7 @@ Or in `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.1.0")
+    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.1.1")
 ]
 ```
 
@@ -249,19 +249,19 @@ WarpLink.checkDeferredDeepLink { result in
 
 After migration, verify each flow works:
 
-- [ ] **SDK initializes** — enable `debugLogging` and check for `[WarpLink] Configured with API key: ...` in the console
-- [ ] **API key validates** — check for `[WarpLink] API key validated successfully`
-- [ ] **Universal Links open the app** — tap a WarpLink URL on a physical device
-- [ ] **Deep link resolves** — `handleDeepLink` returns a `WarpLinkDeepLink` with the correct destination
-- [ ] **Custom parameters are preserved** — check `deepLink.customParams` matches what you configured
-- [ ] **Deferred deep links work** — delete the app, click a link, install, launch, verify the match arrives. The completion marker is scoped to one install, so a plain delete-and-reinstall re-runs attribution. See [Troubleshooting](troubleshooting.md#first-launch-already-completed).
-- [ ] **AASA is correct** — `curl https://aplnk.to/.well-known/apple-app-site-association` shows your app's bundle ID and team ID
-- [ ] **Error handling works** — test with an invalid URL, expired link, and no connectivity
-- [ ] **Old Firebase code is fully removed** — no remaining `import FirebaseCore` or `import FirebaseDynamicLinks`
-- [ ] **Build succeeds** — clean build with no Firebase dependencies
+- [ ] **SDK initializes**: enable `debugLogging` and check for `[WarpLink] Configured with API key: ...` in the console
+- [ ] **API key validates**: check for `[WarpLink] API key validated successfully`
+- [ ] **Universal Links open the app**: tap a WarpLink URL on a physical device
+- [ ] **Deep link resolves**: `handleDeepLink` returns a `WarpLinkDeepLink` with the correct destination
+- [ ] **Custom parameters are preserved**: check `deepLink.customParams` matches what you configured
+- [ ] **Deferred deep links work**: delete the app, click a link, install, launch, verify the match arrives. The completion marker is scoped to one install, so a plain delete-and-reinstall re-runs attribution. See [Troubleshooting](troubleshooting.md#first-launch-already-completed).
+- [ ] **AASA is correct**: `curl https://aplnk.to/.well-known/apple-app-site-association` shows your app's bundle ID and team ID
+- [ ] **Error handling works**: test with an invalid URL, expired link, and no connectivity
+- [ ] **Old Firebase code is fully removed**: no remaining `import FirebaseCore` or `import FirebaseDynamicLinks`
+- [ ] **Build succeeds**: clean build with no Firebase dependencies
 
 ## Related Guides
 
-- [Integration Guide](integration-guide.md) — full setup walkthrough
-- [API Reference](api-reference.md) — all public types and methods
-- [Troubleshooting](troubleshooting.md) — common issues after migration
+- [Integration Guide](integration-guide.md): full setup walkthrough
+- [API Reference](api-reference.md): all public types and methods
+- [Troubleshooting](troubleshooting.md): common issues after migration

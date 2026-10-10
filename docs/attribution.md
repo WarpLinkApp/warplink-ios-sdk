@@ -8,25 +8,25 @@ When a user interacts with a WarpLink URL, the platform captures signals from th
 
 The result is returned as a `WarpLinkDeepLink` with `matchType`, `matchConfidence`, and `matchGuaranteed` properties.
 
-## Deterministic Matching (IDFV)
+## Repeat Check (IDFV)
 
-**Used for:** Re-engagement — when the app is already installed or was previously installed on the same device.
+**Used for:** Re-engagement. When the app is already installed or was previously installed on the same device, the same install asking again.
 
 | Property | Value |
 |----------|-------|
 | Signal | IDFV (`UIDevice.current.identifierForVendor`) |
-| Match type | `.deterministic` |
-| Confidence | 1.0 (exact match) |
+| Match type | The stored install's own match type (never upgraded) |
+| Confidence | The stored install's own confidence |
 | Requires ATT? | No |
 | Requires user permission? | No |
 
 IDFV (Identifier for Vendor) is a UUID unique to the combination of your app and the device. It's the same across all apps from the same vendor on a single device. It does not require any user permission and is **exempt from App Tracking Transparency (ATT)**.
 
-The SDK reads IDFV via `UIDevice.current.identifierForVendor` and includes it as `device_id` in attribution requests. If the server finds a matching IDFV in stored click data, it returns a deterministic match with confidence 1.0 and `matchGuaranteed: true`.
+The SDK reads IDFV via `UIDevice.current.identifierForVendor` and includes it as `device_id` in attribution requests. If the server finds an install already stored for that IDFV, it returns that install with its own match type and confidence. The IDFV check is a repeat check, not an install match: it never turns a probabilistic match into a guaranteed one, and `matchGuaranteed` stays `false` unless the original match was guaranteed. It does not answer a reinstall the SDK reports as one; that install falls through to the fingerprint tier. The App Store passes nothing through an install, so every first install on iOS is matched in the probabilistic tier.
 
 ## Probabilistic Matching (Enriched Fingerprint)
 
-**Used for:** First-install attribution — when the app was not previously installed.
+**Used for:** First-install attribution, when the app was not previously installed.
 
 | Property | Value |
 |----------|-------|
@@ -47,7 +47,7 @@ The fingerprint is `HMAC(secret, ip + "|" + normalizedLanguage + "|" + ianaTimez
 | Preferred language | `accept_language` | `Locale.preferredLanguages.first` | Sent **raw** (e.g. `en-US`). The server normalizes to the primary subtag (`en`). Do not pre-normalize. |
 | Timezone | `timezone` | `TimeZone.current.identifier` | The IANA zone name (e.g. `America/Toronto`). New in 1.1.0. |
 | Timezone offset | `timezone_offset` | `-(TimeZone.current.secondsFromGMT() / 60)` | Minutes, JS `getTimezoneOffset()` convention (UTC+2 → -120), DST-aware. Still sent as the fallback key. |
-| IDFV | `device_id` | `UIDevice.current.identifierForVendor` | Deterministic re-engagement match. |
+| IDFV | `device_id` | `UIDevice.current.identifierForVendor` | Repeat check: returns the install this device already has. |
 | Bundle ID | `app_bundle_id` | `Bundle.main.bundleIdentifier` | Identifies which of your apps this install is. Not part of the fingerprint. |
 | Reinstall flag | `is_reinstall` | SDK markers | `true` when this device completed attribution under an earlier install. Not part of the fingerprint. |
 | IP address | (server-derived) | request | Never sent by the SDK. |
@@ -85,23 +85,23 @@ Those are ceilings. Two multipliers pull the score down when the answer was less
 
 The match window is server-side, set per link in the dashboard. It **defaults to 6 hours and cannot exceed 24**; a link created before that ceiling may still carry a longer value, but the platform clamps it to 24 hours on read. There is no client-side match-window setting.
 
-The window is short on purpose. The fingerprint key is a network, not a device: an IP address, a normalized language, and a timezone. Every phone behind one NAT that shares a language and timezone lands in the same bucket, so each extra hour lets another stranger join it while adding almost no real matches. This governs the probabilistic tier only. The deterministic path (IDFV) reads stored click data instead of the fingerprint bucket, so the window does not apply to it.
+The window is short on purpose. The fingerprint key is a network, not a device: an IP address, a normalized language, and a timezone. Every phone behind one NAT that shares a language and timezone lands in the same bucket, so each extra hour lets another stranger join it while adding almost no real matches. This governs the probabilistic tier only. The IDFV repeat check reads the stored install instead of the fingerprint bucket, so the window does not apply to it.
 
 ## Interpreting Match Results
 
 The `WarpLinkDeepLink` returned to `onLink` (or by `handleDeepLink` / `checkDeferredDeepLink`) includes:
 
-- `matchType: MatchType?` — `.deterministic` or `.probabilistic`
-- `matchConfidence: Double?` — 0.0 to 1.0
+- `matchType: MatchType?`: `.deterministic` or `.probabilistic`
+- `matchConfidence: Double?`: 0.0 to 1.0
 - `matchGuaranteed: Bool`, `true` only for a deterministic match
 
-### Gate sensitive work on `matchGuaranteed`
+### `matchGuaranteed` Is Not a Credential
 
-`matchGuaranteed` is `true` only when the match came from a deterministic signal, which on iOS is the IDFV. Gate anything sensitive on it (auto sign-in, restoring an account, showing personal data) rather than on a confidence threshold. A probabilistic match is a best guess drawn from a network-shaped fingerprint, so even a high score can name the wrong user.
+`matchGuaranteed` is `true` only when the match came from a deterministic signal. On iOS no first install is deterministic, because the App Store passes nothing through an install, and the IDFV never upgrades a match. Use it, like `matchConfidence`, to pick the destination to route to, not to authenticate the user. A probabilistic match is a best guess drawn from a network-shaped fingerprint, so even a high score can name the wrong user. Authenticate the user and check authorization separately before showing private data or doing anything sensitive, guaranteed match or not.
 
 ```swift
 if deepLink.matchGuaranteed {
-    restoreAccount(from: deepLink)   // this is the person we think it is
+    personalizeOnboarding(from: deepLink)   // a reliable hint, not an identity
 } else {
     showContent(from: deepLink)      // route content, but never identity
 }
@@ -112,9 +112,9 @@ if deepLink.matchGuaranteed {
 | Confidence | Recommended Action |
 |------------|-------------------|
 | 1.0 (deterministic) | Route directly to content |
-| > 0.5 (probabilistic) | Route to content — high confidence |
+| > 0.5 (probabilistic) | Route to content, high confidence |
 | 0.3 to 0.5 | Show content with a confirmation (e.g., "Were you looking for...?") |
-| < 0.3 | Show generic onboarding — too uncertain |
+| < 0.3 | Show generic onboarding, too uncertain |
 
 ```swift
 WarpLinkOptions(onLink: { result in
@@ -138,7 +138,7 @@ The WarpLink SDK:
 
 - **Does NOT use IDFA** (Advertising Identifier)
 - **Does NOT prompt for ATT permission**
-- **Uses only IDFV**, which is [exempt from ATT](https://developer.apple.com/documentation/apptrackingtransparency) — it does not track users across apps
+- **Uses only IDFV**, which is [exempt from ATT](https://developer.apple.com/documentation/apptrackingtransparency). It does not track users across apps
 - **Does NOT interfere** with your app's own ATT strategy
 
 You can use WarpLink alongside any ATT implementation. The SDK's attribution works independently of the user's ATT consent choice.
@@ -152,7 +152,7 @@ You can use WarpLink alongside any ATT implementation. The SDK's attribution wor
 | Preferred language | Fingerprint component | `Locale.preferredLanguages.first` |
 | Timezone name | Fingerprint component | `TimeZone.current.identifier` |
 | Timezone offset | Fingerprint component (fallback key) | `TimeZone.current.secondsFromGMT()` |
-| IDFV | Deterministic matching | `UIDevice.current.identifierForVendor` |
+| IDFV | Repeat check (recognizing an install asking again) | `UIDevice.current.identifierForVendor` |
 | Reinstall flag (`is_reinstall`) | Routing a returning user back to the content they tapped, and separating reinstalls from first installs afterwards | Keychain install marker |
 
 The SDK does **not** collect:
@@ -196,5 +196,5 @@ for you.
 
 ## Related Guides
 
-- [Deferred Deep Links](deferred-deep-links.md) — how deferred deep linking uses attribution
-- [API Reference](api-reference.md) — `MatchType` and `WarpLinkDeepLink` documentation
+- [Deferred Deep Links](deferred-deep-links.md): how deferred deep linking uses attribution
+- [API Reference](api-reference.md): `MatchType` and `WarpLinkDeepLink` documentation

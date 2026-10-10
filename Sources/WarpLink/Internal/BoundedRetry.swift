@@ -28,6 +28,7 @@ enum BoundedRetry {
         perform(
             number: 1,
             startedAt: WarpLink.monotonicNow(),
+            rateLimitSpent: false,
             isCurrent: isCurrent,
             attempt: attempt,
             completion: completion
@@ -37,13 +38,15 @@ enum BoundedRetry {
     private static func perform<T>(
         number: Int,
         startedAt: TimeInterval,
+        rateLimitSpent: Bool,
         isCurrent: @escaping () -> Bool,
         attempt: @escaping (Int, @escaping (Result<T, WarpLinkError>) -> Void) -> Void,
         completion: @escaping (Result<T, WarpLinkError>) -> Void
     ) {
         attempt(number) { result in
             guard let wait = nextWait(
-                after: result, number: number, startedAt: startedAt, isCurrent: isCurrent
+                after: result, number: number, startedAt: startedAt,
+                rateLimitSpent: rateLimitSpent, isCurrent: isCurrent
             ) else {
                 completion(result)
                 return
@@ -53,8 +56,9 @@ enum BoundedRetry {
                     completion(result)
                     return
                 }
+                let spent = rateLimitSpent || result.isRateLimited
                 perform(
-                    number: number + 1, startedAt: startedAt,
+                    number: number + 1, startedAt: startedAt, rateLimitSpent: spent,
                     isCurrent: isCurrent, attempt: attempt, completion: completion
                 )
             }
@@ -67,15 +71,34 @@ enum BoundedRetry {
         after result: Result<T, WarpLinkError>,
         number: Int,
         startedAt: TimeInterval,
+        rateLimitSpent: Bool,
         isCurrent: () -> Bool
     ) -> TimeInterval? {
         guard case let .failure(error) = result else { return nil }
         guard isCurrent() else { return nil }
-        guard RetryPolicy.isRetryable(error) else { return nil }
+        // A 429 gets one retry per request, at any attempt, after the wait the
+        // server asked for. It is not `isRetryable`: the other 4xx refusals
+        // repeat, a rate limit lifts.
+        let isRateLimited = RateLimit.isRateLimited(error)
+        guard isRateLimited || RetryPolicy.isRetryable(error) else { return nil }
         // The elapsed cap, not just the attempt count. A per-attempt timeout
         // bounds the gap between bytes rather than the response, so three
         // attempts that each crawl outlast any budget stated in attempts alone.
-        guard WarpLink.monotonicNow() - startedAt < RetryPolicy.totalBudget else { return nil }
+        let elapsed = WarpLink.monotonicNow() - startedAt
+        guard elapsed < RetryPolicy.totalBudget else { return nil }
+        if isRateLimited {
+            guard !rateLimitSpent, number < RetryPolicy.maxAttempts,
+                  let wait = RateLimit.wait(for: error),
+                  elapsed + wait < RetryPolicy.totalBudget else { return nil }
+            return wait
+        }
         return RetryPolicy.delay(beforeAttempt: number + 1)
+    }
+}
+
+private extension Result {
+    var isRateLimited: Bool {
+        if case let .failure(error as WarpLinkError) = self { return RateLimit.isRateLimited(error) }
+        return false
     }
 }

@@ -33,8 +33,9 @@ final class FingerprintCollector {
         self.timeZone = timeZone
     }
 
-    /// The device's Identifier for Vendor (IDFV), used for deterministic
-    /// re-engagement matching. Always available on iOS (no ATT required).
+    /// The device's Identifier for Vendor (IDFV), used for the repeat check
+    /// that recognizes an install asking again. Always available on iOS (no
+    /// ATT required).
     /// Returns `nil` on non-UIKit platforms or rare edge cases (device restore).
     var idfv: String? {
         #if canImport(UIKit)

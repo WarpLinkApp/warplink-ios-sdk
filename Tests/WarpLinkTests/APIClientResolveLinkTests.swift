@@ -102,6 +102,43 @@ final class APIClientResolveLinkTests: XCTestCase {
         waitForExpectations(timeout: 2)
     }
 
+    // The permanent test address of an app host, https://{handle}.aplnk.to/test, is no link: the server
+    // answers the resolve with the ordinary not found. A phone with an updated build opens the app on
+    // it, so the SDK must treat that answer like any other not found: one request, one linkNotFound,
+    // never a retry and never a link.
+    func testResolveAppHostTestAddressIsLinkNotFoundOnceAndNeverRetried() {
+        var requests = [URL]()
+        MockURLProtocol.requestHandler = { request in
+            requests.append(request.url!)
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil
+            )!
+            let data = try JSONSerialization.data(withJSONObject: [
+                "error": ["code": "NOT_FOUND", "message": "Link not found"],
+            ])
+            return (response, data)
+        }
+
+        let exp = expectation(description: "completion")
+        client.resolveLink(slug: "test", domain: "fampilot.aplnk.to") { result in
+            if case .failure(let error) = result {
+                if case .linkNotFound = error {
+                    // Expected
+                } else {
+                    XCTFail("Expected linkNotFound, got \(error)")
+                }
+            } else {
+                XCTFail("Expected failure, got \(result)")
+            }
+            exp.fulfill()
+        }
+        waitForExpectations(timeout: 2)
+
+        XCTAssertEqual(requests.count, 1, "a not found must not be retried")
+        XCTAssertEqual(requests.first?.path, "/v1/links/resolve/test")
+        XCTAssertTrue(requests.first?.query?.contains("domain=fampilot.aplnk.to") == true)
+    }
+
     func testResolveLink401ReturnsInvalidApiKey() {
         mockResponse(statusCode: 401, json: ["error": "Unauthorized"])
 

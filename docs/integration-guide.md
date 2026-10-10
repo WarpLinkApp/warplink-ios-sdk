@@ -44,7 +44,7 @@ WarpLink issues two kinds of credentials. Mobile apps need an **SDK key**, which
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.1.0")
+    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.1.1")
 ]
 ```
 
@@ -253,7 +253,7 @@ curl -X POST https://api.warplink.app/v1/links \
 
 1. Build and run your app on a physical iOS device
 2. Open the test link in Safari on the device (or send it via Messages/Notes)
-3. Tap the link — your app should open and `onLink` should fire
+3. Tap the link: your app should open and `onLink` should fire
 4. Check the Xcode console for `[WarpLink]` log messages if you enabled `debugLogging`
 
 ### Testing Deferred Deep Links
@@ -277,6 +277,6 @@ To run the test again, repeat from step 1. Every run after the first is reported
 
 ## Next Steps
 
-- [API Reference](api-reference.md) — full documentation of all public types and methods
-- [Error Handling](error-handling.md) — how to handle every error case
-- [Attribution](attribution.md) — understanding signals, confidence scores, and match types
+- [API Reference](api-reference.md): full documentation of all public types and methods
+- [Error Handling](error-handling.md): how to handle every error case
+- [Attribution](attribution.md): understanding signals, confidence scores, and match types

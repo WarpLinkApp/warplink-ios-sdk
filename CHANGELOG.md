@@ -5,6 +5,33 @@ All notable changes to the WarpLink iOS SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.1.1] - 2026-10-10
+
+### Changed
+
+- **Rate limits are retried once.** When the link resolve or the attribution
+  match answers `429` with a `Retry-After` of 5 seconds or less, the SDK waits
+  that long and sends the request one more time. With no readable `Retry-After`
+  it waits 1 second. A longer `Retry-After` is not retried. If the retry is also
+  refused, or the `Retry-After` is longer than 5 seconds, the call fails with
+  `WarpLinkError.serverError` and `statusCode` 429. No new error case is added,
+  so existing exhaustive `switch` statements keep compiling.
+
+### Clarification
+
+This corrects the 1.1.0 `matchGuaranteed` guidance below. `matchGuaranteed` is
+not a credential. Use it, like a confidence threshold, to pick the destination
+the attribution result routes to. A probabilistic match is a best guess from a
+fingerprint shaped by the network rather than the device, so it can name the
+wrong user. Do not sign anyone in, or show personal data, on this flag.
+Authenticate the user and check authorization separately.
+
+The IDFV lookup answers the same install asking again and returns the install
+the device already has, with that install's own match type and confidence. It
+never turns a probabilistic match into a guaranteed one.
+
 ## [1.1.0] - 2026-09-15
 
 Additive, opt-out release. A single `configure(apiKey:options:)` with an `onLink`
@@ -82,7 +109,7 @@ except for the `customParams` value type (see below).
 - **Attribution signals:** the SDK now sends only `accept_language` (raw preferred
   language) and `timezone_offset` (minutes, JS convention), plus optional
   `device_id` (IDFV). **Removed** `user_agent` and screen width/height from the
-  attribution body — they never matched across the browser/native boundary. The
+  attribution body. They never matched across the browser/native boundary. The
   server computes the fingerprint from the request IP + these signals.
 - **Attribution signals:** the body now also carries `timezone`, the IANA zone
   name (`TimeZone.current.identifier`), alongside `timezone_offset`. The zone name carries more entropy
@@ -93,6 +120,9 @@ except for the `customParams` value type (see below).
   referrer, or a device-id match) and `false` for a probabilistic one. Gate
   auto-login, personal data, and anything else you cannot safely show the wrong
   person on this flag, not on the match alone.
+  **Correction:** this guidance was wrong. A device-ID lookup does not make a
+  match deterministic, and `matchGuaranteed` is not a credential. See
+  [1.1.1](#111---2026-10-10).
 - **Match window:** the deferred payload's default lifetime drops from 72 hours
   to 6, with a 24-hour ceiling. The probabilistic tier only. Deterministic
   matches are unaffected. A deferred link that is claimed more than 24 hours
@@ -199,6 +229,29 @@ except for the `customParams` value type (see below).
   directly are unaffected: this only changes the bridge's own internal resolve
   path, reached through an SPI the public API does not expose.
 
+### Migration: `customParams` is now `[String: JSONValue]`
+
+`WarpLinkDeepLink.customParams` changed type in 1.1.0 from `[String: Any]` to
+`[String: JSONValue]`. This breaks source: code that casts a value no longer
+compiles. Read values through the typed accessors on `JSONValue` instead.
+
+```swift
+// 1.0.x
+let id = link.customParams["id"] as? String
+let count = link.customParams["count"] as? Int
+
+// 1.1.0
+let id = link.customParams["id"]?.stringValue
+let count = link.customParams["count"]?.intValue
+```
+
+The accessors are `stringValue`, `intValue`, `doubleValue`, `boolValue`,
+`arrayValue`, and `objectValue`. Each returns `nil` when the value has another
+type. `foundationValue` lowers a value to plain Foundation types (`String`,
+`Int`, `Double`, `Bool`, `[String: Any]`, `[Any]`, `NSNull`) for code that still
+needs `Any`. To convert the whole dictionary:
+`link.customParams.mapValues { $0.foundationValue }`.
+
 ## [1.0.2] - 2026-06-26
 
 ### Added
@@ -230,8 +283,8 @@ except for the `customParams` value type (see below).
 ### Added
 
 - SDK initialization with `WarpLink.configure(apiKey:options:)` including local API key format validation (`wl_live_`/`wl_test_` prefix + 32 alphanumeric characters) and async server-side validation via `/sdk/validate` with 24-hour cache
-- Universal Link handling with `WarpLink.handleDeepLink(_:completion:)` — resolves links via `/links/resolve` API, returns destination URL, deep link URL, and custom parameters
-- Deferred deep link resolution with `WarpLink.checkDeferredDeepLink(completion:)` — enriched fingerprint matching for first-install attribution with automatic first-launch detection and result caching
+- Universal Link handling with `WarpLink.handleDeepLink(_:completion:)`: resolves links via `/links/resolve` API, returns destination URL, deep link URL, and custom parameters
+- Deferred deep link resolution with `WarpLink.checkDeferredDeepLink(completion:)`: enriched fingerprint matching for first-install attribution with automatic first-launch detection and result caching
 - Install attribution with two matching tiers:
   - Deterministic matching via IDFV (`UIDevice.current.identifierForVendor`) for re-engagement (confidence 1.0)
   - Probabilistic matching via enriched fingerprint (IP + User-Agent + Accept-Language + screen resolution + timezone) for first-install
@@ -241,4 +294,4 @@ except for the `customParams` value type (see below).
 - `MatchType` enum (`deterministic`, `probabilistic`) for attribution match classification
 - SwiftUI and UIKit support (`.onOpenURL` and `SceneDelegate`/`AppDelegate` patterns)
 - Debug logging with `[WarpLink]` prefix and API key masking
-- Zero third-party dependencies — built entirely on Foundation and UIKit
+- Zero third-party dependencies, built entirely on Foundation and UIKit

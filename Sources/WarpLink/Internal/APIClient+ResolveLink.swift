@@ -121,6 +121,8 @@ extension APIClient {
             )
         case 401:
             return .failure(.invalidApiKey)
+        case RateLimit.statusCode:
+            return .failure(RateLimit.error(for: httpResponse))
         default:
             return .failure(.serverError(
                 statusCode: httpResponse.statusCode,

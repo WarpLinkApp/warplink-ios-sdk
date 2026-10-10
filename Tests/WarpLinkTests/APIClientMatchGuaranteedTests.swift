@@ -1,9 +1,9 @@
 import XCTest
 @testable import WarpLink
 
-/// `matchGuaranteed` gates auto sign-in and personal data in host apps. Nothing
-/// on iOS pinned how it is read off the wire, so flipping the default to true
-/// stayed green while every probabilistic guess became a guarantee.
+/// Host apps read `matchGuaranteed` to choose how specific a screen to open.
+/// Nothing on iOS pinned how it is read off the wire, so flipping the default
+/// to true stayed green while every probabilistic guess became a guarantee.
 final class APIClientMatchGuaranteedTests: XCTestCase {
 
     override func setUp() {
@@ -23,7 +23,7 @@ final class APIClientMatchGuaranteedTests: XCTestCase {
         var received: AttributionResponse?
         client.matchAttribution(
             signals: DeviceSignals(acceptLanguage: "en-US", timezoneOffset: -300, timezone: "America/Toronto"),
-            sdkVersion: "1.1.0", deviceId: nil, isReinstall: false
+            sdkVersion: "1.1.1", deviceId: nil, isReinstall: false
         ) { result in
             if case .success(let response) = result { received = response }
         }
