@@ -44,7 +44,7 @@ Everything is on by default. Configure once with a single `onLink` sink, then ad
 
 ### 1. Configure with one sink
 
-`onLink` receives every resolved link: cold-start, warm-start, and deferred (first-install). Tell them apart with `deepLink.isDeferred`. Only a real match or an error reaches `onLink`; a deferred check that finds no match is suppressed and never dispatched to the sink. A **background deferred check that fails**, for example on a launch with no network, also reaches `onLink` as a failure: the gate stays open, so the next launch retries by itself, and the error is a report rather than something for the host to act on.
+`onLink` receives every resolved link: cold-start, warm-start, and deferred (first-install). Tell them apart with `deepLink.isDeferred`. Only a real match or an error reaches `onLink`; a deferred check that finds no match is suppressed and never dispatched to the sink. A background deferred check that cannot finish, for example on a launch with no network, retries by itself on the next launch.
 
 ```swift
 import SwiftUI
@@ -143,13 +143,13 @@ if WarpLink.isWarpLinkURL(url) {
 }
 ```
 
-`isWarpLinkURL(_:)` is the same check `WarpLink.open(_:)` makes: a host in the known link-domain set, and a path that carries a slug. It resolves nothing and touches no network, so it is safe to call on every URL. Before `configure(apiKey:options:)` the known set is `aplnk.to` alone, so a link on your own domain reads as `false` until you have declared it in `WarpLinkOptions.linkDomains` or your Info.plist, or the server has returned it.
+`isWarpLinkURL(_:)` is the same check `WarpLink.open(_:)` makes: a host in the known link-domain set, and a path that carries a slug. It resolves nothing and touches no network, so it is safe to call on every URL. Declare your own domain in `WarpLinkOptions.linkDomains` or your Info.plist and `isWarpLinkURL(_:)` recognizes it.
 
 ## Features
 
 - **Universal Link handling** with custom-domain support. Declare your domain in `WarpLinkOptions.linkDomains` or a `WarpLinkDomains` Info.plist array and it resolves from the first launch. See the [Integration Guide](docs/integration-guide.md).
 - **Deferred deep links**: route users to specific content even after an App Store install, with an attempt/retry model that survives an offline launch and runs again after a reinstall. See [Deferred Deep Links](docs/deferred-deep-links.md).
-- **Install attribution**: probabilistic (server-side fingerprint) matching with confidence scores, plus an IDFV repeat check that recognizes an install asking again. See [Attribution](docs/attribution.md).
+- **Install attribution**: server-side fingerprint matching with confidence scores, plus an IDFV repeat check that recognizes an install asking again. See [Attribution](docs/attribution.md).
 - **No ATT required**: uses IDFV (exempt from App Tracking Transparency), no IDFA, no prompts.
 - **No swizzling**: you keep control of your delegates; the SDK never patches `UIApplication`.
 - **Zero dependencies**: built entirely on Apple frameworks (Foundation, UIKit, Security).

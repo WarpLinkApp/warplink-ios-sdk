@@ -19,18 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `WarpLinkError.serverError` and `statusCode` 429. No new error case is added,
   so existing exhaustive `switch` statements keep compiling.
 
-### Clarification
+### Match guarantee
 
-This corrects the 1.1.0 `matchGuaranteed` guidance below. `matchGuaranteed` is
-not a credential. Use it, like a confidence threshold, to pick the destination
-the attribution result routes to. A probabilistic match is a best guess from a
-fingerprint shaped by the network rather than the device, so it can name the
-wrong user. Do not sign anyone in, or show personal data, on this flag.
-Authenticate the user and check authorization separately.
+`matchGuaranteed` marks a deterministic match. Use it, like a confidence
+threshold, to pick the destination the attribution result routes to. Keep
+sign-in on your own authentication.
 
 The IDFV lookup answers the same install asking again and returns the install
-the device already has, with that install's own match type and confidence. It
-never turns a probabilistic match into a guaranteed one.
+the device already has, with that install's own match type and confidence.
 
 ## [1.1.0] - 2026-09-15
 
@@ -88,12 +84,11 @@ except for the `customParams` value type (see below).
   ITMS-91053. The reading is compared in process, never persisted and never sent
   off device, as `35F9.1` requires.
 - `WarpLinkError.passwordRequired`, a named case for a password protected link.
-  Resolving one returns no destination and no platform URLs, because the password
-  is checked in the browser and the app never sees it. Earlier versions reported
-  that refusal as an invalid API key. Handle it by opening the short URL itself:
-  the password form lives there, and a correct password redirects on to the
-  destination. A link on a suspended custom domain reuses the existing
-  `.linkNotFound`, so no second case was added.
+  Resolving one returns no destination and no platform URLs, because the
+  password is checked in the browser and the app never sees it. Handle it by
+  opening the short URL itself: the password form lives there, and a correct
+  password redirects on to the destination. A link on a suspended custom domain
+  reuses the existing `.linkNotFound`, so no second case was added.
 - **`WarpLink.isWarpLinkURL(_:)`** answers whether a URL is a WarpLink Universal
   Link the SDK would claim: a host in the known link-domain set, and a path that
   carries a slug. It is the check `WarpLink.open(_:)` already makes before it
@@ -109,39 +104,27 @@ except for the `customParams` value type (see below).
 - **Attribution signals:** the SDK now sends only `accept_language` (raw preferred
   language) and `timezone_offset` (minutes, JS convention), plus optional
   `device_id` (IDFV). **Removed** `user_agent` and screen width/height from the
-  attribution body. They never matched across the browser/native boundary. The
-  server computes the fingerprint from the request IP + these signals.
+  attribution body. The server computes the fingerprint from the request IP +
+  these signals.
 - **Attribution signals:** the body now also carries `timezone`, the IANA zone
   name (`TimeZone.current.identifier`), alongside `timezone_offset`. The zone name carries more entropy
   than a raw offset and does not shift at a daylight-saving boundary. The offset
   is still sent, and still used, when the server has no zone name for the click.
 - **Match guarantee:** a resolved link now exposes `matchGuaranteed`. It is
-  `true` only for a deterministic match (a real universal/app link, the install
-  referrer, or a device-id match) and `false` for a probabilistic one. Gate
-  auto-login, personal data, and anything else you cannot safely show the wrong
-  person on this flag, not on the match alone.
-  **Correction:** this guidance was wrong. A device-ID lookup does not make a
-  match deterministic, and `matchGuaranteed` is not a credential. See
-  [1.1.1](#111---2026-10-10).
+  `true` only for a deterministic match (a real universal/app link or the install
+  referrer) and `false` for a probabilistic one.
 - **Match window:** the deferred payload's default lifetime drops from 72 hours
   to 6, with a 24-hour ceiling. The probabilistic tier only. Deterministic
-  matches are unaffected. A deferred link that is claimed more than 24 hours
-  after the click will no longer match.
+  matches are unaffected.
 - **First-launch robustness:** the attribution flag is split into "attempted" vs
   "completed". Completion is recorded only on a definitive server response, so an
   offline first launch retries on the next launch.
 - **Reinstalls are attributed again.** A reinstall counts as an install on every
   platform, so the completion marker is scoped to a single install: it lives in
   a file that is excluded from iCloud and iTunes backups, and it goes away with
-  the app. Earlier versions kept a single first-launch flag in UserDefaults,
-  which a backup restore carries, so a restored install was never attributed.
-  Within one install the marker still guarantees at most one attribution. If
-  that file cannot be written, the SDK falls back to a UserDefaults flag, which
-  a restore does carry; in that rare case a restored install is not attributed
-  again.
-  A device that upgrades in place from 1.0.x runs the check once, as a first
-  install: 1.0.x never recorded the install it came from, so there is nothing
-  earlier for it to be a reinstall of.
+  the app. Within one install the marker still guarantees at most one
+  attribution. A device that upgrades in place from 1.0.x
+  runs the check once, as a first install.
 - **`customParams` type:** changed from `[String: Any]` to `[String: JSONValue]`.
   Read values with typed accessors, e.g. `customParams["id"]?.stringValue`.
   (Source-breaking for code that cast `customParams["x"] as? String`.)
@@ -165,69 +148,43 @@ except for the `customParams` value type (see below).
 
 ### Removed
 
-- The inert `WarpLinkOptions.matchWindowHours` option. The match window is
+- The `WarpLinkOptions.matchWindowHours` option. The match window is
   server-authoritative (set per link in the dashboard); there is no client-side
   match-window setting.
 
 ### Fixed
 
-- An install is no longer stranded by an attribution response it cannot use. The
-  deferred check is allowed to run once per install, and any 200 used to spend
-  it, including a `matched` response that named no link and carried no
-  destination. The SDK was right to discard such a response, but it then never
-  asked again: the completion marker outlives every relaunch, so only deleting
-  and reinstalling the app could clear it, and the install stayed unattributed
-  for good. Such a response is now treated as unfinished business and retried on
-  the next launch. A confirmed no-match is still definitive and still closes the
-  check, exactly as before.
-- A Universal Link whose path is not exactly one segment is no longer treated as
-  a link. `https://<your-domain>/blog/hello` used to resolve as slug `blog`,
-  which could open a completely unrelated destination, since a slug can never
-  contain `/` anywhere else in the system. It now yields no slug, and
-  `WarpLink.open(_:)` / `WarpLink.continue(_:)` return `false` for it so the URL
-  falls through to your own router. This matters because the published
-  `apple-app-site-association` covers every path on the domain, so iOS hands the
-  app URLs the SDK was never able to resolve. A percent-encoded `%2F` inside a
-  single segment is rejected for the same reason.
-- An install upgrading from 1.0.x is attributed as a first install. 1.0.x wrote
-  its first-launch flag at the start of the deferred check, before any request
-  was sent, so the flag only ever proved that a check began. Reading it as proof
-  of a completed attribution reported the upgrade's first attribution as a
-  reinstall of an install that was never recorded. The flag is no longer read,
-  and the 1.0.x UserDefaults keys are removed on the first launch of this
-  version. The 1.0.x cached match is not migrated: `attributionResult` is nil
-  for an upgrading user until their next install.
-- A cached match that a backup restore brought back without its completion
-  marker is cleared, so `attributionResult` no longer returns the previous
-  install's match while the new check is in flight.
-- The Keychain device-seen marker is written before anything is deleted. The old
-  order erased a correct marker when the write failed, so the next reinstall
-  was reported as a first install.
-- The attempted marker is scoped to the install, like the completion marker. A
-  restored device no longer logs a retry on its first launch.
+- Installs retry attribution on the next launch when a response names no link.
+- A Universal Link whose path is not exactly one segment, such as
+  `https://<your-domain>/blog/hello`, yields no slug. `WarpLink.open(_:)` and
+  `WarpLink.continue(_:)` return `false` for it so the URL falls through to your
+  own router. This matters because the published `apple-app-site-association`
+  covers every path on the domain, so iOS hands the app URLs the SDK was never
+  able to resolve. A percent-encoded `%2F` inside a single segment is rejected
+  for the same reason.
+- An install upgrading from 1.0.x is attributed as a first install. The flag is
+  no longer read, and the 1.0.x UserDefaults keys are removed on the first launch
+  of this version. The 1.0.x cached match is not migrated: `attributionResult`
+  is nil for an upgrading user until their next install.
+- A restored install clears its cached match.
+- The Keychain device-seen marker is written before anything is deleted.
+- The attempted marker is scoped to the install, like the completion marker.
 - A tapped link that fails on a weak connection is retried. A resolve or a
   deferred check that fails with a dead or flaky connection, or with a 5xx, is
   now attempted up to three times, each attempt with its own time limit and the
-  whole sequence limited to about twelve seconds. A weak connection usually
-  delivers on the second attempt, in about eight. Every attempt of one tap
+  whole sequence limited to about twelve seconds. Every attempt of one tap
   carries the same identifier, so one tap still records one click. Refusals such
   as a missing link, a password protected link or an expired link are never
   retried.
-- A tap arriving after the app was backgrounded long enough for its connection
-  to die is now retried instead of failing outright. The OS reports that as
-  `URLError(.cancelled)`, the same code a superseded tap gets on purpose, and
-  the retry used to refuse both alike. A still-current attempt now retries a
-  cancellation like any other weak-connection failure, on a fresh connection,
-  while a superseded or abandoned one stays unretried exactly as before.
-- A failed resolve now releases the duplicate-tap guard, so tapping the same
-  link again straight after a failure really resolves it instead of being
-  suppressed for the rest of the window. Android already behaved this way.
-- The React Native bridge's resolve now stops the request it superseded instead
-  of leaving it to run its full retry budget. A tap the bridge had already moved
-  past could still succeed on the wire afterward and record a click for a link
-  the app never delivered. Swift hosts calling `handleDeepLink(_:completion:)`
-  directly are unaffected: this only changes the bridge's own internal resolve
-  path, reached through an SPI the public API does not expose.
+- A tap arriving after a long background is retried on a fresh connection. A
+  superseded or abandoned tap is not retried.
+- A failed resolve releases the duplicate-tap guard, so tapping the same link
+  again resolves it.
+- The React Native bridge's resolve stops the request it superseded, instead of
+  leaving it to run its full retry budget. Swift hosts calling
+  `handleDeepLink(_:completion:)` directly are unaffected: this only changes the
+  bridge's own internal resolve path, reached through an SPI the public API does
+  not expose.
 
 ### Migration: `customParams` is now `[String: JSONValue]`
 
@@ -262,7 +219,7 @@ needs `Any`. To convert the whole dictionary:
 
 ### Fixed
 
-- The SDK now reports its correct version (`1.0.1`) in the `WarpLink-iOS/<version>` User-Agent. Earlier builds shipped a stale `sdkVersion` constant.
+- The SDK reports `1.0.1` in the `WarpLink-iOS/<version>` User-Agent.
 
 ### Changed
 
