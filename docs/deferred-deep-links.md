@@ -19,11 +19,11 @@ Without deferred deep links, the user would land on your default home screen wit
 ## How It Works
 
 1. **Click**: User taps a WarpLink URL in Safari or another app
-2. **Signal capture**: WarpLink's redirect page records the click's fingerprint signals (server-side, from the request) and the click's link
+2. **Signal capture**: WarpLink's redirect page records the click's match signals (server-side, from the request) and the click's link
 3. **Store redirect**: User is redirected to the App Store
 4. **Install**: User installs and opens the app
 5. **First launch**: On `configure()`, the SDK collects raw device signals (preferred language, timezone, IDFV) and posts them to `/attribution/match`
-6. **Match result**: The server computes the fingerprint (adding the request IP) and returns a `WarpLinkDeepLink` with `isDeferred: true`, delivered to `onLink`
+6. **Match result**: The server computes the match key (adding the request IP) and returns a `WarpLinkDeepLink` with `isDeferred: true`, delivered to `onLink`
 
 The SDK sends only `accept_language` + `timezone` + `timezone_offset` + `app_bundle_id` + optional `device_id` (IDFV). The `timezone` field is the IANA zone name (e.g. `America/Toronto`), new in 1.1.0; the offset stays as the fallback key for older SDKs. See [Attribution](attribution.md) for the full signal set.
 
@@ -92,15 +92,15 @@ The match confidence depends on the matching method and time elapsed since the c
 | Scenario | Confidence | Match Type |
 |----------|------------|------------|
 | IDFV repeat check (app was previously installed) | The stored install's own score | The stored install's own type |
-| Fingerprint, < 1 hour since click | 0.85 | `probabilistic` |
-| Fingerprint, < 3 hours since click | 0.65 | `probabilistic` |
-| Fingerprint, < 6 hours since click | 0.50 | `probabilistic` |
-| Fingerprint, < 24 hours since click | 0.30 | `probabilistic` |
+| Probabilistic match, < 1 hour since click | 0.85 | `probabilistic` |
+| Probabilistic match, < 3 hours since click | 0.65 | `probabilistic` |
+| Probabilistic match, < 6 hours since click | 0.50 | `probabilistic` |
+| Probabilistic match, < 24 hours since click | 0.30 | `probabilistic` |
 | 24 hours or more since click | no match | none |
 
-The fingerprint rows are the ceilings for the zone-name variant that an SDK collecting a zone name sends. The offset variant kept for older SDKs scores a band lower (0.80 down to 0.25), and the language-only fallback lower still (0.70 down to 0.20). Two multipliers then reduce whichever ceiling applied: 0.6 when more than one distinct link shared the fingerprint, and 0.6 / 0.9 / 1.0 for a carrier-grade-NAT, household-IPv4, or IPv6 click address. See [Attribution](attribution.md) for the full tables.
+The probabilistic rows are the ceilings for the zone-name variant that an SDK collecting a zone name sends. The offset variant kept for older SDKs scores a band lower (0.80 down to 0.25), and the language-only fallback lower still (0.70 down to 0.20). Two multipliers then reduce whichever ceiling applied: 0.6 when more than one distinct link shared the match key, and 0.6 / 0.9 / 1.0 for a carrier-grade-NAT, household-IPv4, or IPv6 click address. See [Attribution](attribution.md) for the full tables.
 
-**Recommendation:** Route to specific content when `matchConfidence` is above 0.5; show generic onboarding below it. `matchGuaranteed` is `true` only for a deterministic match; use it to pick the destination, not as a credential, since a probabilistic match is a best guess from a network-shaped fingerprint and can name the wrong user. Authenticate the user and check authorization separately before anything sensitive. The confidence bands are server-side, and the match window is configured per link in the dashboard (6 hours by default, 24 at most). There is no client-side match-window setting.
+**Recommendation:** Route to specific content when `matchConfidence` is above 0.5; show generic onboarding below it. `matchGuaranteed` is `true` only for a deterministic match; use it to pick the destination, not as a credential, since a probabilistic match is a best guess from a network-shaped match key and can name the wrong user. Authenticate the user and check authorization separately before anything sensitive. The confidence bands are server-side, and the match window is configured per link in the dashboard (6 hours by default, 24 at most). There is no client-side match-window setting.
 
 ## Code Example
 
@@ -142,7 +142,7 @@ Deleting the app clears the completed marker along with the app container, so th
 
 ### Multiple Links Clicked Before Install
 
-A fingerprint is a network rather than a device, so several clicks can land under one key: your own user clicking twice, or two strangers behind the same NAT. The platform keeps them as a list, newest first, up to 10 per fingerprint. A second click no longer overwrites the first, so the install that belongs to the earlier click can still find it.
+A match key is a network rather than a device, so several clicks can land under one key: your own user clicking twice, or two strangers behind the same NAT. The platform keeps them as a list, newest first, up to 10 per match key. A second click no longer overwrites the first, so the install that belongs to the earlier click can still find it.
 
 The server matches against the newest entry your app is allowed to claim, and removes only that entry once it becomes an install. When more than one entry was claimable, the match is scored lower to reflect that the answer was picked from a set.
 

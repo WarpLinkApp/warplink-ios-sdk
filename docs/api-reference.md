@@ -244,7 +244,7 @@ public struct WarpLinkDeepLink: Codable, Sendable, Equatable
 | `isDeferred` | `Bool` | Whether this deep link was resolved via deferred attribution. |
 | `matchType` | `MatchType?` | The type of attribution match (`deterministic` or `probabilistic`). |
 | `matchConfidence` | `Double?` | The confidence score of the attribution match (0.0 to 1.0). |
-| `matchGuaranteed` | `Bool` | `true` only when the match was deterministic. Use it, like `matchConfidence`, to pick the destination to route to, not as a credential: a probabilistic match is a best guess from a network-shaped fingerprint and can name the wrong user. Authenticate the user and check authorization separately before anything sensitive. |
+| `matchGuaranteed` | `Bool` | `true` only when the match was deterministic. Use it, like `matchConfidence`, to pick the destination to route to, not as a credential: a probabilistic match is a best guess from a network-shaped match key and can name the wrong user. Authenticate the user and check authorization separately before anything sensitive. |
 
 ### Working with `customParams`
 
@@ -300,7 +300,7 @@ public enum MatchType: String, Codable, Sendable
 | Case | Description |
 |------|-------------|
 | `.deterministic` | Matched by a deterministic signal, which the server returns only for a Play Install Referrer match. The IDFV repeat check never produces it. Confidence is 1.0 and `matchGuaranteed` is `true`. |
-| `.probabilistic` | Matched via server-side fingerprint (first-install). Confidence is 0.20 to 0.85 by time since click, reduced further when the fingerprint bucket was ambiguous or the click IP was widely shared. `matchGuaranteed` is always `false`. |
+| `.probabilistic` | Matched via a server-side match key (first-install). Confidence is 0.20 to 0.85 by time since click, reduced further when the match key bucket was ambiguous or the click IP was widely shared. `matchGuaranteed` is always `false`. |
 
 See [Attribution](attribution.md) for details on confidence scores.
 

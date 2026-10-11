@@ -127,11 +127,11 @@ A longer match window means more time for IP addresses and network conditions to
 
 ### Shared IP / VPN
 
-Users on shared networks (corporate VPNs, university Wi-Fi, carrier-grade NAT) may produce lower-quality fingerprints. This is inherent to probabilistic matching.
+Users on shared networks (corporate VPNs, university Wi-Fi, carrier-grade NAT) may produce lower-quality match keys. This is inherent to probabilistic matching.
 
 ### Time zone or language changes
 
-The enriched fingerprint uses the device's preferred language and timezone offset. A user who changes either between click and install (or crosses a timezone) may match with lower confidence.
+The enriched match key uses the device's preferred language and timezone offset. A user who changes either between click and install (or crosses a timezone) may match with lower confidence.
 
 ---
 

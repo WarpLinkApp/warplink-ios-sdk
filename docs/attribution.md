@@ -1,10 +1,10 @@
 # Install Attribution
 
-WarpLink uses two tiers of attribution matching to connect app installs and opens to the links that drove them. The SDK collects a small set of raw device signals and sends them to the WarpLink API, which computes the fingerprint server-side (using the request IP) and determines the match.
+WarpLink uses two tiers of attribution matching to connect app installs and opens to the links that drove them. The SDK collects a small set of raw device signals and sends them to the WarpLink API, which computes the match key server-side (using the request IP) and determines the match.
 
 ## Overview
 
-When a user interacts with a WarpLink URL, the platform captures signals from the click. When the app opens (or is installed and opened for the first time), the SDK sends raw device signals. The **server** computes a fingerprint from both sides and determines whether there's a match. The SDK never hashes anything locally and never sends a precomputed fingerprint or an IP address.
+When a user interacts with a WarpLink URL, the platform captures signals from the click. When the app opens (or is installed and opened for the first time), the SDK sends raw device signals. The **server** computes a match key from both sides and determines whether there's a match. The SDK never hashes anything locally and never sends a precomputed match key or an IP address.
 
 The result is returned as a `WarpLinkDeepLink` with `matchType`, `matchConfidence`, and `matchGuaranteed` properties.
 
@@ -22,9 +22,9 @@ The result is returned as a `WarpLinkDeepLink` with `matchType`, `matchConfidenc
 
 IDFV (Identifier for Vendor) is a UUID unique to the combination of your app and the device. It's the same across all apps from the same vendor on a single device. It does not require any user permission and is **exempt from App Tracking Transparency (ATT)**.
 
-The SDK reads IDFV via `UIDevice.current.identifierForVendor` and includes it as `device_id` in attribution requests. If the server finds an install already stored for that IDFV, it returns that install with its own match type and confidence. The IDFV check is a repeat check, not an install match: it never turns a probabilistic match into a guaranteed one, and `matchGuaranteed` stays `false` unless the original match was guaranteed. It does not answer a reinstall the SDK reports as one; that install falls through to the fingerprint tier. The App Store passes nothing through an install, so every first install on iOS is matched in the probabilistic tier.
+The SDK reads IDFV via `UIDevice.current.identifierForVendor` and includes it as `device_id` in attribution requests. If the server finds an install already stored for that IDFV, it returns that install with its own match type and confidence. The IDFV check is a repeat check, not an install match: it never turns a probabilistic match into a guaranteed one, and `matchGuaranteed` stays `false` unless the original match was guaranteed. It does not answer a reinstall the SDK reports as one; that install falls through to the probabilistic tier. The App Store passes nothing through an install, so every first install on iOS is matched in the probabilistic tier.
 
-## Probabilistic Matching (Enriched Fingerprint)
+## Probabilistic Matching (Enriched Match Key)
 
 **Used for:** First-install attribution, when the app was not previously installed.
 
@@ -36,9 +36,9 @@ The SDK reads IDFV via `UIDevice.current.identifierForVendor` and includes it as
 | Requires ATT? | No |
 | Requires user permission? | No |
 
-On first app launch, the SDK sends its raw signals plus the request context. The server hashes them together with the IP it derives from the request and compares against the fingerprint stored at click time.
+On first app launch, the SDK sends its raw signals plus the request context. The server hashes them together with the IP it derives from the request and compares against the match key stored at click time.
 
-The fingerprint is `HMAC(secret, ip + "|" + normalizedLanguage + "|" + ianaTimezone)`. If the SDK sent no zone name (SDKs that send no zone name), the server falls back to `timezoneMinutes` in that last position, then to language alone.
+The match key is `HMAC(secret, ip + "|" + normalizedLanguage + "|" + ianaTimezone)`. If the SDK sent no zone name (SDKs that send no zone name), the server falls back to `timezoneMinutes` in that last position, then to language alone.
 
 ### The attribution signal set (v1.1.0)
 
@@ -48,8 +48,8 @@ The fingerprint is `HMAC(secret, ip + "|" + normalizedLanguage + "|" + ianaTimez
 | Timezone | `timezone` | `TimeZone.current.identifier` | The IANA zone name (e.g. `America/Toronto`). New in 1.1.0. |
 | Timezone offset | `timezone_offset` | `-(TimeZone.current.secondsFromGMT() / 60)` | Minutes, JS `getTimezoneOffset()` convention (UTC+2 → -120), DST-aware. Still sent as the fallback key. |
 | IDFV | `device_id` | `UIDevice.current.identifierForVendor` | Repeat check: returns the install this device already has. |
-| Bundle ID | `app_bundle_id` | `Bundle.main.bundleIdentifier` | Identifies which of your apps this install is. Not part of the fingerprint. |
-| Reinstall flag | `is_reinstall` | SDK markers | `true` when this device completed attribution under an earlier install. Not part of the fingerprint. |
+| Bundle ID | `app_bundle_id` | `Bundle.main.bundleIdentifier` | Identifies which of your apps this install is. Not part of the match key. |
+| Reinstall flag | `is_reinstall` | SDK markers | `true` when this device completed attribution under an earlier install. Not part of the match key. |
 | IP address | (server-derived) | request | Never sent by the SDK. |
 
 **On the zone name (new in 1.1.0).** The IANA zone name carries far more entropy than the offset it joins: roughly 340 zones against roughly 38 offsets. It also does not shift at a daylight-saving boundary, which used to break a click and its install apart when the clocks changed between them. Requests that carry it are scored as the `enriched_tz` variant.
@@ -62,7 +62,7 @@ The fingerprint is `HMAC(secret, ip + "|" + normalizedLanguage + "|" + ianaTimez
 
 ### Confidence by Time Window
 
-The elapsed time and the fingerprint variant set the ceiling. `enriched_tz` is the zone-name variant that an SDK collecting a zone name sends; `enriched` is the offset variant kept for older SDKs; `basic` is the language-only key the server tries last.
+The elapsed time and the match key variant set the ceiling. `enriched_tz` is the zone-name variant that an SDK collecting a zone name sends; `enriched` is the offset variant kept for older SDKs; `basic` is the language-only key the server tries last.
 
 | Time Since Click | `enriched_tz` | `enriched` | `basic` |
 |------------------|---------------|------------|---------|
@@ -76,7 +76,7 @@ Those are ceilings. Two multipliers pull the score down when the answer was less
 
 | Condition | Multiplier |
 |-----------|------------|
-| More than one claimable click sat in the fingerprint's bucket | 0.6 |
+| More than one claimable click sat in the match key's bucket | 0.6 |
 | The click's IP was carrier-grade NAT or private | 0.6 |
 | The click's IP was a household IPv4 address | 0.9 |
 | The click's IP was IPv6 | 1.0 |
@@ -85,7 +85,7 @@ Those are ceilings. Two multipliers pull the score down when the answer was less
 
 The match window is server-side, set per link in the dashboard. It **defaults to 6 hours and cannot exceed 24**; a link created before that ceiling may still carry a longer value, but the platform clamps it to 24 hours on read. There is no client-side match-window setting.
 
-The window is short on purpose. The fingerprint key is a network, not a device: an IP address, a normalized language, and a timezone. Every phone behind one NAT that shares a language and timezone lands in the same bucket, so each extra hour lets another stranger join it while adding almost no real matches. This governs the probabilistic tier only. The IDFV repeat check reads the stored install instead of the fingerprint bucket, so the window does not apply to it.
+The window is short on purpose. The match key is a network, not a device: an IP address, a normalized language, and a timezone. Every phone behind one NAT that shares a language and timezone lands in the same bucket, so each extra hour lets another stranger join it while adding almost no real matches. This governs the probabilistic tier only. The IDFV repeat check reads the stored install instead of the match key bucket, so the window does not apply to it.
 
 ## Interpreting Match Results
 
@@ -97,7 +97,7 @@ The `WarpLinkDeepLink` returned to `onLink` (or by `handleDeepLink` / `checkDefe
 
 ### `matchGuaranteed` Is Not a Credential
 
-`matchGuaranteed` is `true` only when the match came from a deterministic signal. On iOS no first install is deterministic, because the App Store passes nothing through an install, and the IDFV never upgrades a match. Use it, like `matchConfidence`, to pick the destination to route to, not to authenticate the user. A probabilistic match is a best guess drawn from a network-shaped fingerprint, so even a high score can name the wrong user. Authenticate the user and check authorization separately before showing private data or doing anything sensitive, guaranteed match or not.
+`matchGuaranteed` is `true` only when the match came from a deterministic signal. On iOS no first install is deterministic, because the App Store passes nothing through an install, and the IDFV never upgrades a match. Use it, like `matchConfidence`, to pick the destination to route to, not to authenticate the user. A probabilistic match is a best guess drawn from a network-shaped match key, so even a high score can name the wrong user. Authenticate the user and check authorization separately before showing private data or doing anything sensitive, guaranteed match or not.
 
 ```swift
 if deepLink.matchGuaranteed {
@@ -149,9 +149,9 @@ You can use WarpLink alongside any ATT implementation. The SDK's attribution wor
 
 | Signal | Purpose | Source |
 |--------|---------|--------|
-| Preferred language | Fingerprint component | `Locale.preferredLanguages.first` |
-| Timezone name | Fingerprint component | `TimeZone.current.identifier` |
-| Timezone offset | Fingerprint component (fallback key) | `TimeZone.current.secondsFromGMT()` |
+| Preferred language | Match key component | `Locale.preferredLanguages.first` |
+| Timezone name | Match key component | `TimeZone.current.identifier` |
+| Timezone offset | Match key component (fallback key) | `TimeZone.current.secondsFromGMT()` |
 | IDFV | Repeat check (recognizing an install asking again) | `UIDevice.current.identifierForVendor` |
 | Reinstall flag (`is_reinstall`) | Routing a returning user back to the content they tapped, and separating reinstalls from first installs afterwards | Keychain install marker |
 
@@ -166,8 +166,9 @@ The SDK does **not** collect:
 ### Data Handling
 
 - Device signals are sent to the WarpLink API over HTTPS
-- The fingerprint is computed server-side and used solely for attribution matching
+- The match key is computed server-side and used solely for attribution matching
 - No cross-app tracking is performed
+- We use probabilistic matching to restore the tapped link on first launch after install. It uses no advertising ID, and the server keys the pending deep link by an HMAC-SHA256 hash of the IP address, primary language, and time zone. Each tap can be matched only within the app's match window, and pending entries expire automatically. A matched install keeps the hashed key for your plan's data retention period. The raw IP address is not stored. The time zone is used by the enriched variant only (the basic variant uses the IP address and primary language)
 - IDFV is scoped to your vendor, so WarpLink cannot use it to track users across different vendors' apps
 - The reinstall flag is retained on the install record, so it outlives the request that carried it
 

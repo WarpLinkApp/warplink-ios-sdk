@@ -58,17 +58,17 @@ When a user clicks a link before the app is installed:
 
 ```
 User taps link (app not installed)
-    → Edge records the click's fingerprint (IP + language + timezone) and link
-    → Stores it as a deferred payload (keyed by fingerprint)
+    → Edge records the click's match key (IP + language + timezone) and link
+    → Stores it as a deferred payload (keyed by match key)
     → Redirects user to App Store
 
 User installs and opens the app
     → configure() runs the deferred check (autoDeferredCheck, on by default)
     → SDK collects device signals (preferred language, timezone offset, IDFV)
     → SDK calls POST /attribution/match with those raw signals
-    → Server derives the IP, computes the fingerprint, compares to stored clicks
+    → Server derives the IP, computes the match key, compares to stored clicks
     → If IDFV matches a stored install → that install, with its own match type and confidence
-    → If fingerprint matches → probabilistic match (confidence varies by window)
+    → If match key matches → probabilistic match (confidence varies by window)
     → SDK delivers a WarpLinkDeepLink with isDeferred: true to onLink
     → SDK marks attribution complete and caches the result
     → Your app routes the user to the intended content
@@ -81,7 +81,7 @@ User installs and opens the app
 When you call `WarpLink.configure(apiKey:options:)`:
 
 1. **Format validation**: checks the SDK key matches `wl_live_` or `wl_test_` + 32 alphanumeric characters
-2. **Component setup**: creates internal API client, storage, fingerprint collector, and logger
+2. **Component setup**: creates internal API client, storage, signal collector, and logger
 3. **Server validation**: async call to `/sdk/validate` to verify the key is active
 4. **Validation caching**: successful validation is cached for 24 hours (stored in UserDefaults) to avoid redundant network calls
 
@@ -110,7 +110,7 @@ On the attribution attempt, the SDK sends:
 
 It also identifies the caller: `platform`, `sdk_version`, and the app's bundle identifier (`app_bundle_id`), so the server can tell which app of an organization the install belongs to.
 
-These raw signals are sent to the server, which derives the client IP and computes the fingerprint. The SDK does **not** hash or compute fingerprints locally, and does **not** send User-Agent or screen dimensions (removed in 1.1.0; they never matched across the browser/native boundary).
+These raw signals are sent to the server, which derives the client IP and computes the match key. The SDK does **not** hash or compute match keys locally, and does **not** send User-Agent or screen dimensions (removed in 1.1.0; they never matched across the browser/native boundary).
 
 ### Attribution Caching
 

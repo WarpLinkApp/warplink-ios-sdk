@@ -149,7 +149,7 @@ if WarpLink.isWarpLinkURL(url) {
 
 - **Universal Link handling** with custom-domain support. Declare your domain in `WarpLinkOptions.linkDomains` or a `WarpLinkDomains` Info.plist array and it resolves from the first launch. See the [Integration Guide](docs/integration-guide.md).
 - **Deferred deep links**: route users to specific content even after an App Store install, with an attempt/retry model that survives an offline launch and runs again after a reinstall. See [Deferred Deep Links](docs/deferred-deep-links.md).
-- **Install attribution**: server-side fingerprint matching with confidence scores, plus an IDFV repeat check that recognizes an install asking again. See [Attribution](docs/attribution.md).
+- **Install attribution**: server-side probabilistic matching with confidence scores, plus an IDFV repeat check that recognizes an install asking again. See [Attribution](docs/attribution.md).
 - **No ATT required**: uses IDFV (exempt from App Tracking Transparency), no IDFA, no prompts.
 - **No swizzling**: you keep control of your delegates; the SDK never patches `UIApplication`.
 - **Zero dependencies**: built entirely on Apple frameworks (Foundation, UIKit, Security).
