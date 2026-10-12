@@ -3,12 +3,12 @@ import Foundation
 import UIKit
 #endif
 
-/// Raw device signals collected for server-side fingerprint computation.
+/// Raw device signals collected for server-side match key computation.
 ///
 /// Per the attribution contract, the SDK sends only `accept_language` (raw
 /// preferred language), `timezone_offset` (minutes, JS convention) and the IANA
 /// `timezone` name. The
-/// server derives the client IP and computes the fingerprint. User-Agent and
+/// server derives the client IP and computes the match key. User-Agent and
 /// screen dimensions are intentionally NOT collected — they never match across
 /// the browser/native-app and CSS-px/points boundaries.
 struct DeviceSignals {
@@ -18,9 +18,9 @@ struct DeviceSignals {
     let timezone: String
 }
 
-/// Collects device signals for attribution fingerprinting.
+/// Collects device signals for probabilistic install matching.
 ///
-/// Signals are sent raw to the server, which computes the fingerprint using the
+/// Signals are sent raw to the server, which computes the match key using the
 /// client IP + these signals. The SDK does NOT hash locally.
 final class FingerprintCollector {
 
