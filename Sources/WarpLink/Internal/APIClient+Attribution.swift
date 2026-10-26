@@ -1,18 +1,5 @@
 import Foundation
 
-/// Server response for an attribution match request.
-struct AttributionResponse {
-    let matched: Bool
-    let matchType: String?
-    let matchConfidence: Double?
-    let matchGuaranteed: Bool
-    let linkId: String?
-    let deepLinkUrl: String?
-    let destinationUrl: String?
-    let customParams: [String: JSONValue]?
-    let installId: String?
-}
-
 extension APIClient {
 
     /// Request attribution match from the server using raw device signals.
@@ -65,7 +52,7 @@ extension APIClient {
 
     /// The POST this endpoint takes, minus its body. Built by hand rather than
     /// through `makeAuthorizedRequest`, which is the GET builder.
-    private func makeAttributionRequest(
+    func makeAttributionRequest(
         url: URL, tapId: String?, timeout: TimeInterval?
     ) -> URLRequest {
         var request = URLRequest(url: url)
@@ -125,43 +112,13 @@ extension APIClient {
         }
         switch http.statusCode {
         case 200:
-            return decodeAttributionBody(data: data)
+            return AttributionResponse.decode(data: data)
         case 401, 403:
             return .failure(.invalidApiKey)
         case RateLimit.statusCode:
             return .failure(RateLimit.error(for: http))
         default:
             return .failure(.serverError(statusCode: http.statusCode, message: "Server error"))
-        }
-    }
-
-    private static func decodeAttributionBody(
-        data: Data?
-    ) -> Result<AttributionResponse, WarpLinkError> {
-        guard let data = data else {
-            return .failure(.serverError(statusCode: 200, message: "Empty response"))
-        }
-        do {
-            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                return .failure(.decodingError(
-                    NSError(domain: "WarpLink", code: 0, userInfo: [
-                        NSLocalizedDescriptionKey: "Response is not a JSON object",
-                    ])
-                ))
-            }
-            return .success(AttributionResponse(
-                matched: json["matched"] as? Bool ?? false,
-                matchType: json["match_type"] as? String,
-                matchConfidence: json["match_confidence"] as? Double,
-                matchGuaranteed: json["match_guaranteed"] as? Bool ?? false,
-                linkId: json["link_id"] as? String,
-                deepLinkUrl: json["deep_link_url"] as? String,
-                destinationUrl: json["destination_url"] as? String,
-                customParams: (json["custom_params"] as? [String: Any])?.mapValues { JSONValue(any: $0) },
-                installId: json["install_id"] as? String
-            ))
-        } catch {
-            return .failure(.decodingError(error))
         }
     }
 }

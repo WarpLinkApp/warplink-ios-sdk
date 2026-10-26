@@ -10,6 +10,9 @@ struct LinkResolutionResponse {
     let iosFallbackUrl: String?
     let customParams: [String: JSONValue]
     let createdAt: String
+    /// Present only on an in-app open of a referral link. Kept so a later
+    /// claim can name the open; never shown to the host.
+    var recoveryToken: String? = nil
 }
 
 /// The API's error code for a link whose password has not been supplied.
@@ -185,7 +188,8 @@ extension APIClient {
             iosUrl: json["ios_url"] as? String,
             iosFallbackUrl: json["ios_fallback_url"] as? String,
             customParams: (json["custom_params"] as? [String: Any])?.mapValues { JSONValue(any: $0) } ?? [:],
-            createdAt: createdAt
+            createdAt: createdAt,
+            recoveryToken: json["recovery_token"] as? String
         ))
     }
 }

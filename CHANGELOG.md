@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-25
+
+### Added
+
+- **Referral invitations.** `WarpLink.redeemInvitation(text:completion:)` takes
+  the text a person pastes during onboarding. If the text is a WarpLink
+  invitation, the SDK matches it and returns the link in the completion. If it
+  is anything else, the SDK sends nothing and returns `nil`, so onboarding stays
+  usable after a skip, a failed copy or an overwritten clipboard.
+- **Paste controls.** `WarpLinkPasteButton` (SwiftUI, iOS 16 and macOS 13) and
+  `WarpLinkUIPasteButton` (UIKit, iOS 16) hand the pasted text to the SDK. They
+  use the system paste control, so the person taps to allow each paste. The SDK
+  never reads the clipboard on its own.
+- **Bounded retry.** When a pasted invitation fails on the network, the SDK
+  keeps it on the device and tries again on a later launch. It tries at most
+  five times, counting every run that sends the invitation, whether it
+  succeeds, fails or is cut off. It stops at the invitation's own expiry and
+  delivers one invitation once.
+- **Clear errors.** An expired or invalid invitation fails with
+  `WarpLinkError.serverError` and a message that tells the person to reopen or
+  replace the invitation. No new error case is added, so existing exhaustive
+  `switch` statements keep compiling.
+- **`WarpLink.claimReferral(installerId:completion:)`.** Claims the referral for
+  the new installer. The call is safe to repeat. When there is nothing to claim
+  it returns `ReferralClaimResult.Status.none` and no error.
+  `ReferralClaimResult` has a public initializer, so a host or a plugin can
+  build one in its own tests. Every field except `status` has a default.
+- **Match evidence on `WarpLinkDeepLink`.** New optional fields: `attributionId`,
+  `matchMethod`, `evidenceClass`, `replayState`, `capturedParams` and
+  `tappedAt`. A match made from a link id alone reports `legacyLink`, so it stays
+  distinct from a match backed by an invitation. Payloads cached by earlier
+  versions still decode, and a value this version does not know decodes to `nil`.
+
 ## [1.1.1] - 2026-10-10
 
 ### Changed

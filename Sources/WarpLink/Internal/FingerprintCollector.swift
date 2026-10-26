@@ -25,19 +25,28 @@ struct DeviceSignals {
 final class FingerprintCollector {
 
     private let timeZone: TimeZone
+    private let vendorIdentifier: () -> String?
 
     /// - Parameter timeZone: overridden by tests so the sign convention can be
     ///   asserted for a named zone; CI runs at UTC, where a flipped sign is
     ///   invisible.
-    init(timeZone: TimeZone = .current) {
+    /// - Parameter vendorIdentifier: overridden by tests, because the macOS test
+    ///   host has no IDFV.
+    init(
+        timeZone: TimeZone = .current,
+        vendorIdentifier: @escaping () -> String? = FingerprintCollector.systemVendorIdentifier
+    ) {
         self.timeZone = timeZone
+        self.vendorIdentifier = vendorIdentifier
     }
 
     /// The device's Identifier for Vendor (IDFV), used for the repeat check
     /// that recognizes an install asking again. Always available on iOS (no
     /// ATT required).
     /// Returns `nil` on non-UIKit platforms or rare edge cases (device restore).
-    var idfv: String? {
+    var idfv: String? { vendorIdentifier() }
+
+    static func systemVendorIdentifier() -> String? {
         #if canImport(UIKit)
         return UIDevice.current.identifierForVendor?.uuidString
         #else

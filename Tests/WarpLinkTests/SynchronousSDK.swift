@@ -31,9 +31,15 @@ final class InlineTransport: HTTPTransport {
 
     /// The decoded body of the last request to a path containing `fragment`.
     func lastBody(forPathContaining fragment: String) -> [String: Any]? {
-        let match = requests.last { $0.url?.path.contains(fragment) == true }
-        guard let data = match?.resolvedHTTPBody else { return nil }
-        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        bodies(forPathContaining: fragment).last
+    }
+
+    /// The decoded bodies of every request to a path containing `fragment`, in order.
+    func bodies(forPathContaining fragment: String) -> [[String: Any]] {
+        requests
+            .filter { $0.url?.path.contains(fragment) == true }
+            .compactMap { $0.resolvedHTTPBody }
+            .compactMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
     }
 
     /// Answers on the calling thread, so it is finished before it returns and
@@ -84,7 +90,7 @@ extension InlineTransport {
 ///
 /// Undone by `WarpLink.reset()`, which every suite already calls in `tearDown`,
 /// so an injection cannot leak into the next test.
-func makeSDKSynchronous(_ transport: InlineTransport) {
+func makeSDKSynchronous(_ transport: HTTPTransport) {
     SDKEnvironment.makeTransport = { transport }
     SDKEnvironment.deliver = { work in work() }
     // The third boundary. Nothing scheduled anything when these suites were

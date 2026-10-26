@@ -129,6 +129,9 @@ extension WarpLink {
             return
         }
 
+        // After the generation test: a superseded check must not replace the
+        // install id the winning answer left.
+        ReferralServices.evidenceStore.remember(installId: response.installId)
         log?.log(resultLog(matched: matched, definitive: definitive))
         completion(.success(matched))
     }
@@ -186,18 +189,6 @@ extension WarpLink {
     }
 
     private static func deferredLink(from response: AttributionResponse) -> WarpLinkDeepLink? {
-        guard response.matched,
-              let linkId = response.linkId,
-              let destination = response.destinationUrl else { return nil }
-        return WarpLinkDeepLink(
-            linkId: linkId,
-            destination: destination,
-            deepLinkUrl: response.deepLinkUrl,
-            customParams: response.customParams ?? [:],
-            isDeferred: true,
-            matchType: response.matchType.flatMap { MatchType(rawValue: $0) },
-            matchConfidence: response.matchConfidence,
-            matchGuaranteed: response.matchGuaranteed
-        )
+        ReferralMatch.deepLink(from: response)
     }
 }

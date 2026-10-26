@@ -190,6 +190,7 @@ extension WarpLink {
         switch result {
         case let .success(response):
             log?.log("Resolved link: \(response.slug)")
+            ReferralServices.remember(openToken: response.recoveryToken)
             completion(.success(deepLink(from: response)))
         case let .failure(error):
             log?.log("Failed to resolve link: \(error.localizedDescription)")

@@ -15,7 +15,7 @@ public final class WarpLink
 #### `sdkVersion`
 
 ```swift
-public static let sdkVersion: String // "1.1.1"
+public static let sdkVersion: String // "1.2.0"
 ```
 
 The current SDK version string.
@@ -244,7 +244,7 @@ public struct WarpLinkDeepLink: Codable, Sendable, Equatable
 | `isDeferred` | `Bool` | Whether this deep link was resolved via deferred attribution. |
 | `matchType` | `MatchType?` | The type of attribution match (`deterministic` or `probabilistic`). |
 | `matchConfidence` | `Double?` | The confidence score of the attribution match (0.0 to 1.0). |
-| `matchGuaranteed` | `Bool` | `true` only when the match was deterministic. Use it, like `matchConfidence`, to pick the destination to route to, not as a credential: a probabilistic match comes from a hashed match key built from the IP address and language, with time zone when available, so use it to route the user, not to identify them. Authenticate the user and check authorization separately before anything sensitive. |
+| `matchGuaranteed` | `Bool` | `true` only when the match was deterministic. Use it, like `matchConfidence`, to pick the destination to route to, not as a credential: a probabilistic match is an estimate from device signals, namely the IP address and language, with time zone when available, so use it to route the user, not to identify them. Authenticate the user and check authorization separately before anything sensitive. |
 
 ### Working with `customParams`
 

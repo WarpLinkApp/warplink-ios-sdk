@@ -97,7 +97,7 @@ The `WarpLinkDeepLink` returned to `onLink` (or by `handleDeepLink` / `checkDefe
 
 ### `matchGuaranteed` Is Not a Credential
 
-`matchGuaranteed` is `true` only when the match came from a deterministic signal. On iOS no first install is deterministic, because the App Store passes nothing through an install, and the IDFV never upgrades a match. Use it, like `matchConfidence`, to pick the destination to route to, not to authenticate the user. A probabilistic match comes from a hashed match key built from the IP address and language, with time zone when available. Use it to route the user, not to identify them. `matchGuaranteed` is false for probabilistic matches, however high the score. Authenticate the user and check authorization separately before showing private data or doing anything sensitive, guaranteed match or not.
+`matchGuaranteed` is `true` only when the match came from a deterministic signal. On iOS no first install is deterministic, because the App Store passes nothing through an install, and the IDFV never upgrades a match. Use it, like `matchConfidence`, to pick the destination to route to, not to authenticate the user. A probabilistic match is an estimate from device signals, namely the IP address and language, with time zone when available. Use it to route the user, not to identify them. `matchGuaranteed` is false for probabilistic matches, however high the score. Authenticate the user and check authorization separately before showing private data or doing anything sensitive, guaranteed match or not.
 
 ```swift
 if deepLink.matchGuaranteed {
