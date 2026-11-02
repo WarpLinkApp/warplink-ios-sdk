@@ -17,65 +17,31 @@ import Foundation
 /// A reinstall is the state where the device has been seen but the gate is open.
 final class Storage {
 
-    private static let apiKeyValidatedAtKey = "warplink_api_key_validated_at"
-    /// The attempted flag, in the install marker store like the gate: it
-    /// describes this install's attempts, so it must not come back from a
-    /// restore. 1.1.0 pre-release builds kept it in UserDefaults; that key
-    /// is in `legacyKeys` so it is cleaned up.
-    private static let attemptedMarker = "warplink_attribution_attempted"
-    private static let cachedAttrKey = "warplink_cached_attribution"
-    private static let domainsKey = "warplink_cached_domains"
-    /// The gate, in the install marker store.
-    private static let installCompleteMarker = "warplink_attribution_complete"
-    /// The device-seen marker, in the durable store. Same name as 1.1.0's
-    /// Keychain marker on purpose: that marker already meant "this device
-    /// completed attribution for this app", which is precisely this job.
-    private static let deviceSeenMarker = "warplink_attribution_complete"
-    /// Per-install fallback for hosts where the install marker store cannot
-    /// write. `UserDefaults` is restored from a backup, so this trades the
-    /// restore property away to keep the at-most-once guarantee within an
-    /// install. That is the safer half to lose: a re-fire on every launch would
-    /// double-count an install on every single launch.
-    private static let installCompleteFallbackKey = "warplink_attribution_complete_fallback"
-
-    /// Keys 1.0.x wrote and nothing reads any more: its first-launch flag and
-    /// its typed cache. The cache is not migrated: attribution under 1.0.x was
-    /// broken, so almost no device holds a match worth carrying, and an
-    /// upgrading user simply sees `attributionResult` as nil until their next
-    /// install. Removed on construction so they do not sit in the plist forever.
-    private static let legacyKeys = [
-        "warplink_first_launch",
-        "warplink_has_cached_attribution",
-        "warplink_cached_link_id",
-        "warplink_cached_destination",
-        "warplink_cached_deep_link_url",
-        "warplink_cached_is_deferred",
-        "warplink_cached_match_type",
-        "warplink_cached_match_confidence",
-        "warplink_cached_custom_params",
-        "warplink_attribution_attempted",
-    ]
-
+    private let keys: StorageKeys
     private let defaults: UserDefaults
     private let markerStore: DurableMarkerStore
     private let installMarkerStore: InstallMarkerStore
 
     init(
+        environment: KeyEnvironment = .production,
         defaults: UserDefaults = .standard,
         markerStore: DurableMarkerStore = KeychainStore(),
         installMarkerStore: InstallMarkerStore = BackupExcludedFileStore()
     ) {
+        self.keys = StorageKeys(environment: environment)
         self.defaults = defaults
         self.markerStore = markerStore
         self.installMarkerStore = installMarkerStore
-        Self.legacyKeys.forEach { defaults.removeObject(forKey: $0) }
+        if environment == .production {
+            StorageKeys.legacy.forEach { defaults.removeObject(forKey: $0) }
+        }
 
         // A cached match with an open gate is a ghost: the two are written
         // together, and only a restore brings UserDefaults back without the
         // backup-excluded gate. Left alone, attributionResult replays the
         // previous install's match until the new check lands.
-        if isReinstall, defaults.object(forKey: Self.cachedAttrKey) != nil {
-            defaults.removeObject(forKey: Self.cachedAttrKey)
+        if isReinstall, defaults.object(forKey: keys.cachedAttribution) != nil {
+            defaults.removeObject(forKey: keys.cachedAttribution)
         }
     }
 
@@ -86,8 +52,8 @@ final class Storage {
     /// network call. Deliberately not durable across app deletion, because a
     /// reinstall counts as an install and has to be attributed again.
     var isAttributionComplete: Bool {
-        if installMarkerStore.isMarked(Self.installCompleteMarker) { return true }
-        return defaults.bool(forKey: Self.installCompleteFallbackKey)
+        if installMarkerStore.isMarked(keys.installCompleteMarker) { return true }
+        return defaults.bool(forKey: keys.installCompleteFallback)
     }
 
     /// Whether this device has ever completed attribution for this app, under
@@ -99,7 +65,7 @@ final class Storage {
     /// deliberately not read: it lives in UserDefaults, which a restore brings
     /// back, and reading it mislabelled a first install as a reinstall.
     var hasDeviceEverCompletedAttribution: Bool {
-        markerStore.isMarked(Self.deviceSeenMarker)
+        markerStore.isMarked(keys.deviceSeenMarker)
     }
 
     /// The `is_reinstall` value for the next attribution request: this device
@@ -123,22 +89,22 @@ final class Storage {
     /// campaign. The Keychain write is add-before-delete so a failed write can
     /// never erase a marker that is already there.
     func markAttributionComplete() {
-        if !installMarkerStore.mark(Self.installCompleteMarker) {
-            defaults.set(true, forKey: Self.installCompleteFallbackKey)
+        if !installMarkerStore.mark(keys.installCompleteMarker) {
+            defaults.set(true, forKey: keys.installCompleteFallback)
         }
-        markerStore.mark(Self.deviceSeenMarker)
+        markerStore.mark(keys.deviceSeenMarker)
     }
 
     /// Whether at least one attribution attempt has been made this install.
     /// Distinguishes a brand-new first launch from a retry after a prior
     /// attempt failed (offline).
     var hasAttemptedAttribution: Bool {
-        get { installMarkerStore.isMarked(Self.attemptedMarker) }
+        get { installMarkerStore.isMarked(keys.attemptedMarker) }
         set {
             if newValue {
-                installMarkerStore.mark(Self.attemptedMarker)
+                installMarkerStore.mark(keys.attemptedMarker)
             } else {
-                installMarkerStore.clear(Self.attemptedMarker)
+                installMarkerStore.clear(keys.attemptedMarker)
             }
         }
     }
@@ -147,14 +113,14 @@ final class Storage {
 
     var apiKeyValidatedAt: Date? {
         get {
-            let interval = defaults.double(forKey: Self.apiKeyValidatedAtKey)
+            let interval = defaults.double(forKey: keys.apiKeyValidatedAt)
             return interval > 0 ? Date(timeIntervalSince1970: interval) : nil
         }
         set {
             if let date = newValue {
-                defaults.set(date.timeIntervalSince1970, forKey: Self.apiKeyValidatedAtKey)
+                defaults.set(date.timeIntervalSince1970, forKey: keys.apiKeyValidatedAt)
             } else {
-                defaults.removeObject(forKey: Self.apiKeyValidatedAtKey)
+                defaults.removeObject(forKey: keys.apiKeyValidatedAt)
             }
         }
     }
@@ -167,34 +133,55 @@ final class Storage {
     // MARK: - Cached link domains (from /sdk/validate)
 
     var cachedDomains: [String] {
-        get { defaults.stringArray(forKey: Self.domainsKey) ?? [] }
-        set { defaults.set(newValue, forKey: Self.domainsKey) }
+        get { defaults.stringArray(forKey: keys.domains) ?? [] }
+        set { defaults.set(newValue, forKey: keys.domains) }
     }
 
     // MARK: - Cached attribution payload
 
     var cachedAttribution: WarpLinkDeepLink? {
         get {
-            guard let data = defaults.data(forKey: Self.cachedAttrKey) else { return nil }
+            guard let data = defaults.data(forKey: keys.cachedAttribution) else { return nil }
             return try? JSONDecoder().decode(WarpLinkDeepLink.self, from: data)
         }
         set {
             if let value = newValue, let data = try? JSONEncoder().encode(value) {
-                defaults.set(data, forKey: Self.cachedAttrKey)
+                defaults.set(data, forKey: keys.cachedAttribution)
             } else {
-                defaults.removeObject(forKey: Self.cachedAttrKey)
+                defaults.removeObject(forKey: keys.cachedAttribution)
             }
         }
     }
 
+    /// Forget this environment's attribution: the cached match, the gate, the
+    /// attempted flag and the device-seen marker. The next launch attributes
+    /// again as a first install. Key validation and cached domains describe the
+    /// key, not the install, so they stay.
+    ///
+    /// Every marker is tried even when one fails to delete.
+    ///
+    /// - Returns: false when a marker could not be deleted, so the completion
+    ///   gate may still be closed.
+    @discardableResult
+    func clearAttribution() -> Bool {
+        defaults.removeObject(forKey: keys.cachedAttribution)
+        defaults.removeObject(forKey: keys.installCompleteFallback)
+        let cleared = [
+            installMarkerStore.clear(keys.installCompleteMarker),
+            installMarkerStore.clear(keys.attemptedMarker),
+            markerStore.clear(keys.deviceSeenMarker),
+        ]
+        return !cleared.contains(false)
+    }
+
     /// Clear all stored SDK data. Used for testing.
     func clearAll() {
-        defaults.removeObject(forKey: Self.apiKeyValidatedAtKey)
-        defaults.removeObject(forKey: Self.cachedAttrKey)
-        defaults.removeObject(forKey: Self.domainsKey)
-        defaults.removeObject(forKey: Self.installCompleteFallbackKey)
-        installMarkerStore.clear(Self.installCompleteMarker)
-        installMarkerStore.clear(Self.attemptedMarker)
-        markerStore.clear(Self.deviceSeenMarker)
+        defaults.removeObject(forKey: keys.apiKeyValidatedAt)
+        defaults.removeObject(forKey: keys.cachedAttribution)
+        defaults.removeObject(forKey: keys.domains)
+        defaults.removeObject(forKey: keys.installCompleteFallback)
+        installMarkerStore.clear(keys.installCompleteMarker)
+        installMarkerStore.clear(keys.attemptedMarker)
+        markerStore.clear(keys.deviceSeenMarker)
     }
 }

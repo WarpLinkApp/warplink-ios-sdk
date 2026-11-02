@@ -48,8 +48,14 @@ enum SDKEnvironment {
     /// wait never is.
     static var armWatchdog: (TimeInterval, @escaping () -> Void) -> ScheduledWork = liveWatchdog
 
+    /// Builds the `Storage` for the key environment `configure()` chose. A
+    /// test returns one over in-memory stores, so it never touches the host's
+    /// real defaults, Keychain or Application Support directory.
+    static var makeStorage: (KeyEnvironment) -> Storage = liveStorage
+
     /// Restore the shipping behaviour.
     static func reset() {
+        makeStorage = liveStorage
         makeTransport = liveTransport
         deliver = liveDelivery
         schedule = liveSchedule
@@ -57,6 +63,8 @@ enum SDKEnvironment {
     }
 
     // MARK: - Private
+
+    private static let liveStorage: (KeyEnvironment) -> Storage = { Storage(environment: $0) }
 
     private static let liveTransport: () -> HTTPTransport = { URLSessionTransport() }
 

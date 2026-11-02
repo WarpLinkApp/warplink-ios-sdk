@@ -25,7 +25,7 @@ Opt-out by default: a single `configure(apiKey:options:)` with an `onLink` sink 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.2.0")
+    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.3.0")
 ]
 ```
 
@@ -80,6 +80,8 @@ struct MyApp: App {
 `apiKey` takes an **SDK key**, created in the dashboard under **Keys** > **SDK keys**. API keys are a different credential: they resolve deep links but cannot record installs, so attribution fails silently if you paste one here.
 
 The deferred deep link check fires automatically from `configure()`. There is nothing else to call for first-install attribution.
+
+**Testing a first install.** A `wl_test_` key keeps its attribution state apart from `wl_live_` state on the same device. To test a first install again without deleting the app, call `WarpLink.clearAttribution()` with a Test key. It clears the attribution stored on the device and starts a new check. It does nothing with a live key.
 
 ### 2. Deliver incoming Universal Links (one hook)
 

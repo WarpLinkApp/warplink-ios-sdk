@@ -44,7 +44,7 @@ WarpLink issues two kinds of credentials. Mobile apps need an **SDK key**, which
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.2.0")
+    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.3.0")
 ]
 ```
 

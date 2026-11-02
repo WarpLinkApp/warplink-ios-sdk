@@ -122,16 +122,14 @@ extension WarpLink {
         // `dispatchToOnLink` already swallows `.success(nil)`, so an abandoned
         // auto check is silent (parity with Android).
         guard applyIfCurrent(
-            matched, definitive: definitive, store: store, generation: generation
+            matched, definitive: definitive, installId: response.installId,
+            store: store, generation: generation
         ) else {
             log?.log("Deferred check abandoned by reconfigure, discarding its result")
             completion(.success(nil))
             return
         }
 
-        // After the generation test: a superseded check must not replace the
-        // install id the winning answer left.
-        ReferralServices.evidenceStore.remember(installId: response.installId)
         log?.log(resultLog(matched: matched, definitive: definitive))
         completion(.success(matched))
     }
@@ -169,18 +167,20 @@ extension WarpLink {
     /// true: this IS the live check, it simply has nothing worth keeping and
     /// must leave the gate open for the next launch.
     ///
-    /// The generation test and the writes share a single lock hold: a
-    /// `configure()` landing between them would let a stale no-match mark
-    /// attribution complete and blank the match the successor cached, since both
-    /// `Storage` instances persist to the same defaults.
+    /// The generation test and the writes, install id included, share a single
+    /// lock hold: a `configure()` or `clearAttribution()` landing between them
+    /// would let a stale answer mark attribution complete, blank the match the
+    /// successor cached, or restore an install id that was just cleared.
     private static func applyIfCurrent(
         _ deepLink: WarpLinkDeepLink?,
         definitive: Bool,
+        installId: String?,
         store: Storage,
         generation: Int
     ) -> Bool {
         lock.lock(); defer { lock.unlock() }
         guard generation == deferredCheckGeneration else { return false }
+        ReferralServices.evidenceStore.remember(installId: installId)
         guard definitive else { return true }
         // A definitive server response (match or no-match) consumes first launch.
         store.markAttributionComplete()

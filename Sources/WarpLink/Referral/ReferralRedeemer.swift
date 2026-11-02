@@ -67,6 +67,7 @@ enum ReferralRedeemer {
         // counts the attempt and the token survives for the next launch.
         ReferralServices.pendingStore.save(record)
         let isReinstall = context.store.isReinstall
+        let epoch = ReferralServices.epoch
         ReferralBoundedCall.run(
             client: context.client,
             send: { timeout, answer in
@@ -76,31 +77,60 @@ enum ReferralRedeemer {
                 )
             },
             completion: { result in
-                let outcome = finish(result, record: record, context: context)
-                ReferralServices.endRedeem()
-                completion(outcome)
+                finishRun(result, record: record, epoch: epoch, context: context, completion: completion)
             }
         )
+    }
+
+    /// Checks the epoch and applies the answer in one hold of the SDK lock, so a
+    /// key change or `clearAttribution()` cannot land between the two. An answer
+    /// that belongs to state that is gone applies nothing.
+    private static func finishRun(
+        _ result: Result<RecoveryRedeemOutcome, WarpLinkError>,
+        record: PendingRedemption,
+        epoch: Int,
+        context: Context,
+        completion: Completion
+    ) {
+        WarpLink.lock.lock()
+        guard ReferralServices.epoch == epoch else {
+            WarpLink.lock.unlock()
+            ReferralServices.endRedeem()
+            completion(.success(nil))
+            return
+        }
+        let finished = finish(result, record: record, context: context)
+        WarpLink.lock.unlock()
+        finished.settle()
+        ReferralServices.endRedeem()
+        completion(finished.outcome)
     }
 
     private static func finish(
         _ result: Result<RecoveryRedeemOutcome, WarpLinkError>,
         record: PendingRedemption,
         context: Context
-    ) -> Result<WarpLinkDeepLink?, WarpLinkError> {
+    ) -> Finished {
         switch result {
         case let .success(.answered(response)):
             clearPending(ifHolding: record)
-            return .success(apply(response, record: record, context: context))
+            let applied = apply(response, record: record, context: context)
+            return Finished(outcome: .success(applied.link), settle: applied.settle)
         case let .success(.refused(refusal)):
             // The same token would be refused again, so the record ends here.
             clearPending(ifHolding: record)
             context.log?.log("Referral redeem refused: \(refusal.error.localizedDescription)")
-            return .failure(refusal.error)
+            return Finished(outcome: .failure(refusal.error))
         case let .failure(error):
             settleFailure(error, record: record, context: context)
-            return .failure(error)
+            return Finished(outcome: .failure(error))
         }
+    }
+
+    /// The outcome of a run and what it must do once the SDK lock is released.
+    private struct Finished {
+        let outcome: Result<WarpLinkDeepLink?, WarpLinkError>
+        var settle: () -> Void = {}
     }
 
     /// Any failure but a refusal keeps the record for a later launch, until it
@@ -124,16 +154,16 @@ enum ReferralRedeemer {
 
     private static func apply(
         _ response: AttributionResponse, record: PendingRedemption, context: Context
-    ) -> WarpLinkDeepLink? {
+    ) -> (link: WarpLinkDeepLink?, settle: () -> Void) {
         let evidence = ReferralServices.evidenceStore
         evidence.remember(installId: response.installId)
         guard let matched = ReferralMatch.deepLink(from: response) else {
             context.log?.log("Invitation redeemed, no link to route to")
-            return nil
+            return (nil, {})
         }
         evidence.remember(token: record.token, expiresAt: record.expiresAt)
-        WarpLink.recordRedeemedMatch(matched, store: context.store)
+        let settle = WarpLink.recordRedeemedMatchLocked(matched, store: context.store)
         context.log?.log("Invitation redeemed: \(matched.linkId)")
-        return matched
+        return (matched, settle)
     }
 }

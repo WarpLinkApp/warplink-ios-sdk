@@ -15,7 +15,7 @@ public final class WarpLink
 #### `sdkVersion`
 
 ```swift
-public static let sdkVersion: String // "1.2.0"
+public static let sdkVersion: String // "1.3.0"
 ```
 
 The current SDK version string.
@@ -324,7 +324,7 @@ public enum WarpLinkError: Error, LocalizedError
 | `.invalidURL` | The URL is not a valid WarpLink Universal Link. |
 | `.linkNotFound` | The link was not found (404) or is no longer active. |
 | `.passwordRequired` | The link is password protected, so it resolves to no destination and no platform URLs. |
-| `.decodingError(Error)` | Response parsing failed. |
+| `.decodingError(Error)` | Response parsing failed. `clearAttribution()` also returns it, with the message "Could not clear stored attribution data.", when a stored item could not be deleted. |
 
 Each case provides a localized description via `errorDescription`. See [Error Handling](error-handling.md) for recommended recovery actions.
 

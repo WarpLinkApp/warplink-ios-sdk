@@ -21,17 +21,17 @@ struct ReferralEvidence: Codable, Equatable {
 
 final class ReferralEvidenceStore {
 
-    private static let key = "warplink_referral_evidence"
-
+    private let key: String
     private let defaults: UserDefaults
     private let lock = NSLock()
 
-    init(defaults: UserDefaults = .standard) {
+    init(environment: KeyEnvironment = .production, defaults: UserDefaults = .standard) {
+        self.key = environment.scoped("warplink_referral_evidence")
         self.defaults = defaults
     }
 
     var evidence: ReferralEvidence {
-        guard let data = defaults.data(forKey: Self.key),
+        guard let data = defaults.data(forKey: key),
               let stored = try? JSONDecoder().decode(ReferralEvidence.self, from: data)
         else { return ReferralEvidence() }
         return stored
@@ -68,7 +68,7 @@ final class ReferralEvidenceStore {
     func clear() {
         lock.lock()
         defer { lock.unlock() }
-        defaults.removeObject(forKey: Self.key)
+        defaults.removeObject(forKey: key)
     }
 
     /// One read-change-write under the lock, so two writers cannot overwrite
@@ -79,7 +79,7 @@ final class ReferralEvidenceStore {
         var current = evidence
         change(&current)
         if let data = try? JSONEncoder().encode(current) {
-            defaults.set(data, forKey: Self.key)
+            defaults.set(data, forKey: key)
         }
     }
 }

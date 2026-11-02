@@ -35,7 +35,7 @@ private struct StubDeclaration: LinkDomainDeclaring {
 
 final class WarpLinkLinkDomainsTests: XCTestCase {
 
-    private let apiKey = "wl_test_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+    private let apiKey = "wl_live_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
     private let customDomainURL = URL(string: "https://links.acme.com/abc123")!
 
     override func setUp() {

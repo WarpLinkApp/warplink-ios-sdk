@@ -5,7 +5,32 @@ All notable changes to the WarpLink iOS SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-11-02
+
+### Added
+
+- **`WarpLink.clearAttribution()`.** With a `wl_test_` key it clears the
+  attribution stored on the device (the cached match, the attempt and
+  completion markers, and any held referral invitation) and runs a new
+  attribution check when `autoDeferredCheck` is on, so a developer can test a
+  first install again without deleting the app. A check already on the wire
+  when you call it is discarded and cannot refill what was cleared. Only the
+  device is cleared: server records are not deleted. With a `wl_live_` key it
+  does nothing and returns `.success`. Before `configure` it returns
+  `.failure(.notConfigured)`. When a stored item could not be deleted it returns
+  `.failure(.decodingError)` with the message "Could not clear stored
+  attribution data."
+
+### Changed
+
+- **Test and live state are kept apart on the device.** The SDK picks a
+  storage namespace from the key prefix before it reads any state. A
+  `wl_test_` key uses its own names for the cached attribution, the attempt
+  and completion markers, the device-seen marker, the key-validation cache,
+  cached link domains and the referral invitation and evidence, so a Test
+  build never reads or clears what a live build on the same device stored.
+  Live keys, and any other key prefix, keep the names earlier releases used,
+  so an upgrade resets nothing.
 
 ## [1.2.0] - 2026-10-25
 

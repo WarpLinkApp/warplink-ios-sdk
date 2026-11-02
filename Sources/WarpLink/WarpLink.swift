@@ -45,7 +45,7 @@ public final class WarpLink {
     static let dedupeWindow: TimeInterval = 1.0
 
     /// The current SDK version.
-    public static let sdkVersion = "1.2.0"
+    public static let sdkVersion = "1.3.0"
 
     /// Whether the SDK has been configured via `configure(apiKey:options:)`.
     public static var isConfigured: Bool {
@@ -95,40 +95,16 @@ public final class WarpLink {
         }
 
         let newLogger = Logger(debugEnabled: resolvedOptions.debugLogging)
-        let newStorage = Storage()
+        let environment = KeyEnvironment(apiKey: apiKey)
+        let newStorage = SDKEnvironment.makeStorage(environment)
         let newApiClient = APIClient(apiKey: apiKey, baseURL: resolvedOptions.apiEndpoint)
-        let newCollector = FingerprintCollector()
-        // Resolved before the lock is taken: reading the declaration touches the
-        // Info.plist, and none of it needs the SDK's own state.
-        let declaredDomains = resolveLocalDomains(options: resolvedOptions)
-        let cachedServerDomains = LinkDomainNormalizer.normalizeAll(newStorage.cachedDomains)
 
-        lock.lock()
-        self.apiKey = apiKey
-        self.options = resolvedOptions
-        self.logger = newLogger
-        self.storage = newStorage
-        self.apiClient = newApiClient
-        self.fingerprintCollector = newCollector
-        self.apiKeyValidState = nil
-        self.localDomains = declaredDomains
-        self.serverDomains = cachedServerDomains
-        self.lastHandledURLString = nil
-        self.lastHandledURLAt = nil
-        self.deferredCheckInFlight = false
-        self.deferredCheckGeneration += 1
-        // Reconfiguring abandons any in-flight check, so callers parked on it
-        // must be answered here. Leaving them queued would let the abandoned
-        // check deliver its result to callers that parked on a later one.
-        let abandoned = parkedDeferredCompletions
-        parkedDeferredCompletions = []
-        // Taken here, cancelled below the unlock: cancelling calls the
-        // completion, which takes this lock itself.
-        let abandonedCheck = takeAbandonedDeferredCheckLocked()
-        lock.unlock()
+        let abandoned = installConfiguration(
+            apiKey: apiKey, options: resolvedOptions, environment: environment,
+            logger: newLogger, storage: newStorage, apiClient: newApiClient
+        )
 
-        answerAbandonedCallers(abandoned)
-        abandonedCheck?.cancel()
+        abandoned.settle()
         // And the tap the reconfigure abandoned, which is cancelled too.
         supersedeInFlightTap()
 
@@ -141,6 +117,39 @@ public final class WarpLink {
             runAutoDeferredCheck()
         }
         resumePendingInvitation()
+    }
+
+    /// Swaps in the state of a new key under one lock hold, referral stores
+    /// included, so a concurrent `clearAttribution()` sees one key's stores or
+    /// the other's, never a mix. Reconfiguring abandons any in-flight check; the
+    /// caller answers its parked callers once this returns.
+    private static func installConfiguration(
+        apiKey: String,
+        options: WarpLinkOptions,
+        environment: KeyEnvironment,
+        logger: Logger,
+        storage newStorage: Storage,
+        apiClient newApiClient: APIClient
+    ) -> AbandonedDeferredCheck {
+        // Resolved before the lock is taken: reading the declaration touches the
+        // Info.plist, and none of it needs the SDK's own state.
+        let declaredDomains = resolveLocalDomains(options: options)
+        let cachedServerDomains = LinkDomainNormalizer.normalizeAll(newStorage.cachedDomains)
+
+        lock.lock(); defer { lock.unlock() }
+        self.apiKey = apiKey
+        self.options = options
+        self.logger = logger
+        self.storage = newStorage
+        self.apiClient = newApiClient
+        self.fingerprintCollector = FingerprintCollector()
+        self.apiKeyValidState = nil
+        self.localDomains = declaredDomains
+        self.serverDomains = cachedServerDomains
+        self.lastHandledURLString = nil
+        self.lastHandledURLAt = nil
+        ReferralServices.use(environment)
+        return abandonDeferredCheckLocked()
     }
 
     /// Reset SDK state. Internal method for testing only.
@@ -173,21 +182,5 @@ public final class WarpLink {
 
         abandonedCheck?.cancel()
         supersedeInFlightTap()
-    }
-
-    // MARK: - Private
-
-    /// Answer the callers a reconfigure stranded on the check it just abandoned.
-    ///
-    /// They get the `.success(nil)` no-op rather than a fabricated
-    /// `.notConfigured` (the SDK is configured), so an auto check parked on the
-    /// abandoned one stays silent to `onLink`, which suppresses a no-match.
-    /// Parity with the abandoned check's own response path.
-    private static func answerAbandonedCallers(
-        _ abandoned: [(Result<WarpLinkDeepLink?, WarpLinkError>) -> Void]
-    ) {
-        abandoned.forEach { pending in
-            SDKEnvironment.deliver { pending(.success(nil)) }
-        }
     }
 }

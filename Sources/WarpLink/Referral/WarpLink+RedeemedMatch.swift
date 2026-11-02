@@ -9,8 +9,13 @@ extension WarpLink {
     /// would route a second, weaker link to `onLink` and overwrite the cache.
     /// The generation bump makes it answer the silent no-op, as a reconfigure
     /// does, and a caller parked on it gets the exact match instead.
-    static func recordRedeemedMatch(_ link: WarpLinkDeepLink, store: Storage) {
-        lock.lock()
+    ///
+    /// The caller holds `lock`. The parked callers are answered and the
+    /// abandoned check cancelled only when the returned closure runs, which the
+    /// caller does after it unlocks.
+    static func recordRedeemedMatchLocked(
+        _ link: WarpLinkDeepLink, store: Storage
+    ) -> () -> Void {
         store.markAttributionComplete()
         store.cachedAttribution = link
         deferredCheckInFlight = false
@@ -18,9 +23,9 @@ extension WarpLink {
         let parked = parkedDeferredCompletions
         parkedDeferredCompletions = []
         let abandonedCheck = takeAbandonedDeferredCheckLocked()
-        lock.unlock()
-
-        parked.forEach { pending in SDKEnvironment.deliver { pending(.success(link)) } }
-        abandonedCheck?.cancel()
+        return {
+            parked.forEach { pending in SDKEnvironment.deliver { pending(.success(link)) } }
+            abandonedCheck?.cancel()
+        }
     }
 }

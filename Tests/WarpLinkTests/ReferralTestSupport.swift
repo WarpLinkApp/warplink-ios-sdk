@@ -68,7 +68,7 @@ enum ReferralWire {
 /// a clock the test owns, and a configured SDK.
 class ReferralTestCase: XCTestCase {
 
-    let apiKey = "wl_test_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+    let apiKey = "wl_live_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
     let pending = InMemoryPendingStore()
     var storage: Storage!
     var evidenceDefaults: UserDefaults!

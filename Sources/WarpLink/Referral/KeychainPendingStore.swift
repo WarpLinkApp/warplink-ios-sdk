@@ -13,25 +13,28 @@ import Security
 /// in a store the system removes with the app.
 final class KeychainPendingStore: ReferralPendingStore {
 
-    private static let account = "referral_pending_redemption"
-    private static let installMarker = "referral_pending_redemption"
     #if canImport(Security)
     private static let accessibility = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
     #endif
 
+    /// Keychain account and install-marker file share one name, in the
+    /// environment's namespace.
+    private let name: String
     private let service: String
     private let installMarkers: InstallMarkerStore
 
     init(
+        environment: KeyEnvironment = .production,
         service: String = "app.warplink.sdk.\(Bundle.main.bundleIdentifier ?? "unknown")",
         installMarkers: InstallMarkerStore = BackupExcludedFileStore()
     ) {
+        self.name = environment.scoped("referral_pending_redemption")
         self.service = service
         self.installMarkers = installMarkers
     }
 
     func load() -> PendingRedemption? {
-        guard installMarkers.isMarked(Self.installMarker) else {
+        guard installMarkers.isMarked(name) else {
             remove()
             return nil
         }
@@ -46,13 +49,13 @@ final class KeychainPendingStore: ReferralPendingStore {
     @discardableResult
     func save(_ record: PendingRedemption) -> Bool {
         guard let data = try? JSONEncoder().encode(record) else { return false }
-        guard write(data), installMarkers.mark(Self.installMarker) else { return false }
+        guard write(data), installMarkers.mark(name) else { return false }
         return true
     }
 
     func clear() {
         remove()
-        installMarkers.clear(Self.installMarker)
+        installMarkers.clear(name)
     }
 
     // MARK: - Keychain
@@ -62,7 +65,7 @@ final class KeychainPendingStore: ReferralPendingStore {
         #if canImport(Security)
         query[kSecClass as String] = kSecClassGenericPassword
         query[kSecAttrService as String] = service
-        query[kSecAttrAccount as String] = Self.account
+        query[kSecAttrAccount as String] = name
         query[kSecUseDataProtectionKeychain as String] = true
         #endif
         return query
