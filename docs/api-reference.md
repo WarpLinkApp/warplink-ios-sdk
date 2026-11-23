@@ -15,7 +15,7 @@ public final class WarpLink
 #### `sdkVersion`
 
 ```swift
-public static let sdkVersion: String // "1.4.0"
+public static let sdkVersion: String // "1.4.1"
 ```
 
 The current SDK version string.

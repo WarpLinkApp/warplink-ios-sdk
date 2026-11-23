@@ -25,7 +25,7 @@ Opt-out by default: a single `configure(apiKey:options:)` with an `onLink` sink 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.4.0")
+    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.4.1")
 ]
 ```
 
@@ -154,7 +154,7 @@ if WarpLink.isWarpLinkURL(url) {
 
 ## Tether: carry the link through the install
 
-When a person copies a WarpLink code on the web and installs your app, the SDK can read that code and route to the link. The default is Apple's paste button, which needs iOS 16: nothing is read until the person taps it. On iOS 15 use `WarpLink.readTether(completion:)` from a plain button.
+When a person copies a WarpLink code on the web and installs your app, the SDK can read that code and route to the link. The default is Apple's paste button, which needs iOS 16: nothing is read until the person taps it. On iOS 15 use `WarpLink.readTether(completion:)` from a plain button. How Tether works end to end: [warplink.app/docs/tether](https://warplink.app/docs/tether).
 
 ```swift
 // SwiftUI. The paste button needs iOS 16; on iOS 15 use a plain button that calls readTether.
