@@ -17,10 +17,14 @@ import Foundation
 /// A reinstall is the state where the device has been seen but the gate is open.
 final class Storage {
 
-    private let keys: StorageKeys
-    private let defaults: UserDefaults
+    let keys: StorageKeys
+    let defaults: UserDefaults
     private let markerStore: DurableMarkerStore
-    private let installMarkerStore: InstallMarkerStore
+    let installMarkerStore: InstallMarkerStore
+    private let installationIds: InstallationIdStore
+    /// Guards `clearGeneration` and the delivered-link record together.
+    let deliveryLock = NSLock()
+    var clearGeneration = 0
 
     init(
         environment: KeyEnvironment = .production,
@@ -32,6 +36,7 @@ final class Storage {
         self.defaults = defaults
         self.markerStore = markerStore
         self.installMarkerStore = installMarkerStore
+        self.installationIds = InstallationIdStore(store: installMarkerStore, key: keys.installationId)
         if environment == .production {
             StorageKeys.legacy.forEach { defaults.removeObject(forKey: $0) }
         }
@@ -42,10 +47,11 @@ final class Storage {
         // previous install's match until the new check lands.
         if isReinstall, defaults.object(forKey: keys.cachedAttribution) != nil {
             defaults.removeObject(forKey: keys.cachedAttribution)
+            defaults.removeObject(forKey: keys.onLinkDelivered)
         }
     }
 
-    // MARK: - Attribution lifecycle (split: attempted vs completed)
+    // MARK: - Attribution lifecycle
 
     /// The gate: whether attribution has definitively completed for this
     /// install. When `true`, the deferred check returns cached data with no
@@ -83,6 +89,7 @@ final class Storage {
     /// If the gate can't be written, fall back to `UserDefaults` so the result
     /// is still delivered at most once for this install instead of re-firing on
     /// every launch.
+    ///
     /// A failed device-seen write costs the reinstall tag. The server reads
     /// that tag to decide whether the device-id branch may reuse the previous
     /// install's row, so a lost write can route the next reinstall to the old
@@ -109,53 +116,12 @@ final class Storage {
         }
     }
 
-    // MARK: - API key validation cache
-
-    var apiKeyValidatedAt: Date? {
-        get {
-            let interval = defaults.double(forKey: keys.apiKeyValidatedAt)
-            return interval > 0 ? Date(timeIntervalSince1970: interval) : nil
-        }
-        set {
-            if let date = newValue {
-                defaults.set(date.timeIntervalSince1970, forKey: keys.apiKeyValidatedAt)
-            } else {
-                defaults.removeObject(forKey: keys.apiKeyValidatedAt)
-            }
-        }
-    }
-
-    var isApiKeyValidationCacheValid: Bool {
-        guard let validatedAt = apiKeyValidatedAt else { return false }
-        return Date().timeIntervalSince(validatedAt) < 86400
-    }
-
-    // MARK: - Cached link domains (from /sdk/validate)
-
-    var cachedDomains: [String] {
-        get { defaults.stringArray(forKey: keys.domains) ?? [] }
-        set { defaults.set(newValue, forKey: keys.domains) }
-    }
-
-    // MARK: - Cached attribution payload
-
-    var cachedAttribution: WarpLinkDeepLink? {
-        get {
-            guard let data = defaults.data(forKey: keys.cachedAttribution) else { return nil }
-            return try? JSONDecoder().decode(WarpLinkDeepLink.self, from: data)
-        }
-        set {
-            if let value = newValue, let data = try? JSONEncoder().encode(value) {
-                defaults.set(data, forKey: keys.cachedAttribution)
-            } else {
-                defaults.removeObject(forKey: keys.cachedAttribution)
-            }
-        }
-    }
+    /// The id of this install, sent on every attribution match.
+    var installationId: String { installationIds.id }
 
     /// Forget this environment's attribution: the cached match, the gate, the
-    /// attempted flag and the device-seen marker. The next launch attributes
-    /// again as a first install. Key validation and cached domains describe the
+    /// attempted flag, the installation id and the device-seen marker. The next
+    /// check attributes again as a first install. Key validation and cached domains describe the
     /// key, not the install, so they stay.
     ///
     /// Every marker is tried even when one fails to delete.
@@ -165,23 +131,29 @@ final class Storage {
     @discardableResult
     func clearAttribution() -> Bool {
         defaults.removeObject(forKey: keys.cachedAttribution)
+        forgetOnLinkDelivery()
         defaults.removeObject(forKey: keys.installCompleteFallback)
         let cleared = [
             installMarkerStore.clear(keys.installCompleteMarker),
             installMarkerStore.clear(keys.attemptedMarker),
+            installationIds.clear(),
             markerStore.clear(keys.deviceSeenMarker),
-        ]
+        ] + clearCheckState()
         return !cleared.contains(false)
     }
 
-    /// Clear all stored SDK data. Used for testing.
+    /// Clear all stored SDK data.
     func clearAll() {
         defaults.removeObject(forKey: keys.apiKeyValidatedAt)
         defaults.removeObject(forKey: keys.cachedAttribution)
+        forgetOnLinkDelivery()
         defaults.removeObject(forKey: keys.domains)
         defaults.removeObject(forKey: keys.installCompleteFallback)
         installMarkerStore.clear(keys.installCompleteMarker)
         installMarkerStore.clear(keys.attemptedMarker)
+        installationIds.clear()
         markerStore.clear(keys.deviceSeenMarker)
+        clearCheckState()
+        defaults.removeObject(forKey: keys.sdkPolicy)
     }
 }

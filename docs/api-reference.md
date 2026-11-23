@@ -15,7 +15,7 @@ public final class WarpLink
 #### `sdkVersion`
 
 ```swift
-public static let sdkVersion: String // "1.3.0"
+public static let sdkVersion: String // "1.4.0"
 ```
 
 The current SDK version string.
@@ -55,7 +55,7 @@ public static func configure(
 )
 ```
 
-Configure the SDK with your SDK key. Must be called before any other SDK methods. Call once, as early as possible.
+Configure the SDK with your SDK key. Must be called before any other SDK methods. Call it once, as early as possible. A second call with the same key and equal options keeps the running session and its check, and only takes the new `onLink`. A different key or different options start a new session.
 
 **Parameters:**
 
@@ -147,6 +147,28 @@ Run the deferred deep link check on demand (called for you when `autoDeferredChe
 
 ---
 
+#### `deferredCheckStatus`
+
+```swift
+public static var deferredCheckStatus: DeferredCheckStatus { get }
+```
+
+Where the deferred check stands for this install. Use it to tell a skipped check from a check that found no link. It sends no request. Every state except `.checking` comes from what the SDK stored, so a relaunch keeps it.
+
+| State | Meaning |
+|-------|---------|
+| `.notChecked` | No check has finished for this install yet. Also reported when a check failed and its wait has passed, so the next one may send. |
+| `.checking` | A check is running, or waiting for the app to come to the foreground. |
+| `.matched` | The check finished and found a link. |
+| `.noMatch` | The check finished and found no link. |
+| `.waiting(retryAt: Date)` | An earlier check failed. The next one is allowed from `retryAt`. |
+| `.skippedOldInstall` | The install is older than the server's limit (30 days by default), so no request is sent. |
+| `.stopped` | The SDK gave up after the server's give-up time (3 days after the first failed check by default). No request is sent. |
+
+A `wl_test_` key never reports `.waiting`, `.skippedOldInstall` or `.stopped`.
+
+---
+
 ## WarpLinkAppDelegate / WarpLinkSceneDelegate
 
 Drop-in host delegates that forward incoming Universal Links to the SDK. No swizzling. Use directly, subclass, or copy the forwarding lines into your own delegate.
@@ -180,7 +202,7 @@ public struct WarpLinkOptions: Sendable
 | `autoDeepLinkHandling` | `Bool` | `true` | Auto-resolve links from `open(_:)`/`continue(_:)` and route to `onLink`. Disable to use `handleDeepLink` yourself. |
 | `autoDeferredCheck` | `Bool` | `true` | Auto-run the deferred check from `configure()` and route to `onLink`. Disable to call `checkDeferredDeepLink` yourself. |
 | `linkDomains` | `[String]` | `[]` | Your link domains, e.g. `["links.yourbrand.com"]`. Recognized the moment `configure()` returns, so a link on a custom domain resolves on a first launch. Added to `aplnk.to` and to the server's list, never substituted for them. Bare hosts and full URLs both work. |
-| `onLink` | `(@Sendable (Result<WarpLinkDeepLink?, WarpLinkError>) -> Void)?` | `nil` | Single sink for all resolved links (cold, warm, deferred). Only a match or an error is delivered; a deferred no-match is suppressed, not dispatched to the sink. |
+| `onLink` | `(@MainActor @Sendable (Result<WarpLinkDeepLink?, WarpLinkError>) -> Void)?` | `nil` | Single sink for all resolved links (cold, warm, deferred). Only a match or an error is delivered; a deferred no-match is suppressed, not dispatched to the sink. Runs on the main actor, so it can call `@MainActor` code. The `onLink` property you read back is a plain `@Sendable` closure that runs your handler on the main actor. |
 
 ### Initializer
 
@@ -191,7 +213,7 @@ public init(
     autoDeepLinkHandling: Bool = true,
     autoDeferredCheck: Bool = true,
     linkDomains: [String] = [],
-    onLink: (@Sendable (Result<WarpLinkDeepLink?, WarpLinkError>) -> Void)? = nil
+    onLink: (@MainActor @Sendable (Result<WarpLinkDeepLink?, WarpLinkError>) -> Void)? = nil
 )
 ```
 
@@ -331,6 +353,7 @@ Each case provides a localized description via `errorDescription`. See [Error Ha
 ## Thread Safety
 
 - `WarpLink.isConfigured`, `isApiKeyValid`, and `attributionResult` are thread-safe (protected by `NSLock`).
-- `onLink` and all completion handlers (`handleDeepLink`, `checkDeferredDeepLink`) are dispatched to the **main thread**.
+- `onLink` and all completion handlers (`handleDeepLink`, `checkDeferredDeepLink`) are dispatched to the **main thread**. `onLink` is a `@MainActor` closure.
+- `WarpLink.deferredCheckStatus` is thread-safe and sends no request.
 - The SDK adds a light dedupe so the same URL delivered twice in a short window (auto delegate + a manual call) dispatches once.
-- `configure()` can be called from any thread, but should be called once during app initialization.
+- `configure()` can be called from any thread. Call it once during app initialization. A repeat call with the same key and options keeps the running session and only replaces `onLink`.

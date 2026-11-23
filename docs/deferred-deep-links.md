@@ -67,7 +67,7 @@ WarpLink.checkDeferredDeepLink { result in
 The SDK splits the first-launch flag into **attempted** and **completed**:
 
 - An attribution attempt is marked **completed** only on a *definitive server response* (a match or a confirmed no-match).
-- If the attempt fails before that (for example, the device is offline on first launch), it is marked **attempted** but not **completed**, so the SDK **retries on the next launch**.
+- If the attempt fails before that (for example, the device is offline on first launch), it is marked **attempted** but not **completed**, so the SDK **retries on a later launch**. The retry waits after each failure (15 minutes, then 1 hour, 6 hours and 24 hours) and stops 3 days after the first failure. A check counts as failed from the moment its request is sent, so an app that is killed while the request is out still waits. The server can change these values. A `wl_test_` key never waits.
 
 This fixes the classic footgun where an offline first launch silently consumed the one-shot flag and no attribution ever ran.
 
@@ -83,7 +83,9 @@ A second, separate marker in the **Keychain** records only that this device has 
 
 - The network attribution call happens once, when the attempt completes.
 - The matched result is cached (`WarpLink.attributionResult`), and `checkDeferredDeepLink` returns it without a network call after completion.
-- A failed attempt does not cache a result and does not block a retry.
+- A failed attempt does not cache a result and does not block a retry, once its wait has passed.
+- An install older than 30 days sends no request: the check returns no match. An install older than 48 hours sends the request without raw device signals. A `wl_test_` key is not limited by age. The SDK reads the install date from the creation date of the app's own Documents and Library folders and never sends it.
+- The check starts only while the app is active. A call made earlier waits for activation and then runs.
 
 ## Confidence Scores
 
@@ -123,7 +125,7 @@ func handleLink(_ result: Result<WarpLinkDeepLink?, WarpLinkError>) {
     case .success(nil):
         showOnboarding()                // deferred check ran, no match
     case .failure(let error):
-        // Offline on first launch, say. The SDK will retry next launch.
+        // Offline on first launch, say. The SDK tries again on a later launch.
         print("Deferred deep link error: \(error.localizedDescription)")
         showOnboarding()
     }
@@ -134,7 +136,7 @@ func handleLink(_ result: Result<WarpLinkDeepLink?, WarpLinkError>) {
 
 ### Offline First Launch
 
-If the device has no connectivity on first launch, the attempt fails with `.networkError` and is **not** marked complete. The SDK retries the attribution check on the next launch. You don't need to build your own retry loop, though you may still choose to show a default experience meanwhile.
+If the device has no connectivity on first launch, the attempt fails with `.networkError` and is **not** marked complete. The SDK retries the attribution check on a later launch, after a short wait that grows with each failure. You don't need to build your own retry loop, though you may still choose to show a default experience meanwhile.
 
 ### App Reinstall
 
@@ -145,6 +147,28 @@ Deleting the app clears the completed marker along with the app container, so th
 A match key is a network rather than a device, so several clicks can land under one key: your own user clicking twice, or two strangers behind the same NAT. The platform keeps them as a list, newest first, up to 10 per match key. A second click no longer overwrites the first, so the install that belongs to the earlier click can still find it.
 
 The server matches against the newest entry your app is allowed to claim, and removes only that entry once it becomes an install. When more than one entry was claimable, the match is scored lower to reflect that the answer was picked from a set.
+
+## If your test did not match
+
+Use a `wl_test_` key and a link from your Test app while you build: a Test key has no waits and no age limits. Tap the link again before every install: one tap matches one install.
+
+If a test still shows no link, read the status of the check:
+
+```swift
+print(WarpLink.deferredCheckStatus)
+```
+
+Read it after the check ends, for example from a debug button, or watch for the `Deferred check: <state>` log line. Right after `configure`, it reads the check as still running.
+
+`.waiting(retryAt:)`, `.skippedOldInstall` and `.stopped` mean the SDK did not send a request. `.noMatch` means the server looked and found no link. All of them give the same empty answer from `checkDeferredDeepLink`, and `isAttributionComplete` stays `false` after a check that did not send. These causes give no link:
+
+- **The link and the key are from different environments.** A `wl_test_` key matches only taps on links of your Test app, at `<handle>-test.aplnk.to`. A `wl_live_` key matches only Production links. Create the test link in Test, and tap that link.
+- **A wait is running.** The first launch never waits. A check counts as failed from the moment its request is sent, so stopping the app in Xcode while the request is out starts a 15-minute wait. Use a `wl_test_` key, or wait until `retryAt`.
+- **The install is too old.** With a `wl_live_` key, an install older than 48 hours is checked without language and timezone, so it usually reads `.noMatch`. An install older than 30 days is not checked and reads `.skippedOldInstall`. Xcode keeps the app container when it runs the app again, so the install age keeps counting. Delete the app to start the age and the waits over.
+- **The click was used.** A click matches one install. Tap the link again before the next install.
+- **The click is too old.** The match window is 6 hours by default.
+
+With `debugLogging: true`, each request prints `[WarpLink] Deferred check request: attempt <n>, raw signals <yes|no>`, and each check ends with `[WarpLink] Deferred check: <state>`. A waiting check prints `Deferred check: waiting, retry at <ISO 8601 time>`.
 
 ## Related Guides
 

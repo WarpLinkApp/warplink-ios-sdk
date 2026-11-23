@@ -49,10 +49,11 @@ extension WarpLink {
         let abandoned = abandonDeferredCheckLocked()
         let cleared = store.clearAttribution()
         ReferralServices.clearAll()
+        TetherServices.clearAll()
         let autoCheck = options?.autoDeferredCheck ?? false
         lock.unlock()
 
-        abandoned.settle()
+        abandoned.settle(givingBackCount: false)
         guard cleared else { return .failure(.decodingError(ClearAttributionError.markerNotDeleted)) }
         if autoCheck { runAutoDeferredCheck() }
         return .success(())

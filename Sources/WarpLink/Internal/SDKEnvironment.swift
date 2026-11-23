@@ -1,24 +1,13 @@
 import Foundation
 
-/// The three boundaries that make this SDK asynchronous, in one place.
+/// The boundaries the SDK crosses, in one place: the network, the hop onto the
+/// main queue to hand a result back, the waits between attempts, the clock, the
+/// install date and the app's foreground state. All of them are injectable, and
+/// closing them makes a whole SDK operation run inline, so a test can call it
+/// and assert on the next line instead of sleeping and hoping the work landed.
 ///
-/// Everything the SDK does for a caller crosses at least two of them: an HTTP
-/// round trip, and a hop onto the main queue to hand the result back. A bounded
-/// retry crosses a third, the wait it spends between one attempt and the next.
-/// All three are injectable here, and closing them makes a whole SDK operation
-/// run inline, so a test can call it and assert on the next line.
-///
-/// That matters because the alternative is what the suite used to do: sleep for
-/// a fixed interval and hope the work landed inside it. A sleep is a race with
-/// no observer. It passes on a quiet machine and fails on a loaded one, which is
-/// exactly what happened to `WarpLinkAutoWireTests` under a parallel build.
-///
-/// A fake clock does not help here, which is worth stating because it is the
-/// obvious idea. `monotonicNow` is injectable precisely because the dedupe
-/// window *reads* a clock. Nothing on this path does: `URLSession` answers when
-/// I/O completes, `DispatchQueue.main` answers when the queue drains, and
-/// `asyncAfter` answers when its own deadline arrives. None of the three
-/// consults a clock you can move.
+/// `monotonicNow` (see `WarpLink`) is the separate clock for in-process
+/// intervals. `now` is the wall clock for times the SDK stores across launches.
 ///
 /// Restored by `WarpLink.reset()`, so an injection cannot leak into the next
 /// test.
@@ -53,6 +42,16 @@ enum SDKEnvironment {
     /// real defaults, Keychain or Application Support directory.
     static var makeStorage: (KeyEnvironment) -> Storage = liveStorage
 
+    /// The wall clock, for times stored across launches.
+    static var now: () -> Date = { Date() }
+
+    /// When this install was made, or nil when it cannot be read.
+    static var installDate: () -> Date? = { InstallDate.ofRunningApp() }
+
+    /// Runs `work` while the app is in the foreground: now, or at the next
+    /// activation. A deferred check starts through it.
+    static var whenActive: (@escaping () -> Void) -> Void = AppForeground.whenActive
+
     /// Restore the shipping behaviour.
     static func reset() {
         makeStorage = liveStorage
@@ -60,6 +59,9 @@ enum SDKEnvironment {
         deliver = liveDelivery
         schedule = liveSchedule
         armWatchdog = liveWatchdog
+        now = { Date() }
+        installDate = { InstallDate.ofRunningApp() }
+        whenActive = AppForeground.whenActive
     }
 
     // MARK: - Private
@@ -75,7 +77,7 @@ enum SDKEnvironment {
     }
 
     /// Off the main queue: the work it schedules is an HTTP round trip, and the
-    /// hop back onto main happens in `SDKEnvironment.deliver` as it always did.
+    /// hop back onto main happens in `SDKEnvironment.deliver`.
     private static let liveSchedule: (TimeInterval, @escaping () -> Void) -> Void = { delay, work in
         DispatchQueue.global(qos: .userInitiated).asyncAfter(
             deadline: .now() + delay, execute: work

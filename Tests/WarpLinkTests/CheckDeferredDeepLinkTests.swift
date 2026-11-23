@@ -481,7 +481,13 @@ final class CheckDeferredDeepLinkTests: XCTestCase {
         WarpLink.runAutoDeferredCheck()
         wait(for: [inFlight], timeout: 2)
 
-        WarpLink.configure(apiKey: testApiKey, options: options)
+        WarpLink.configure(
+            apiKey: testApiKey,
+            options: WarpLinkOptions(
+                debugLogging: true, autoDeepLinkHandling: false, autoDeferredCheck: false,
+                onLink: options.onLink
+            )
+        )
         WarpLink.storage = store
         gate.signal()
         wait(for: [silence], timeout: 0.6)

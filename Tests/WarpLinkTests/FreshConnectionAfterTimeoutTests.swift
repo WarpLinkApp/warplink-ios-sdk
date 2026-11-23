@@ -37,9 +37,7 @@ final class FreshConnectionAfterTimeoutTests: XCTestCase {
         _ transport: ConnectionTrackingTransport,
         onLink: @escaping @Sendable (Result<WarpLinkDeepLink?, WarpLinkError>) -> Void
     ) {
-        SDKEnvironment.makeTransport = { transport }
-        SDKEnvironment.deliver = { work in work() }
-        SDKEnvironment.schedule = { _, work in work() }
+        makeSDKSynchronous(transport)
         watchdog.install()
         WarpLink.configure(apiKey: apiKey, options: WarpLinkOptions(
             autoDeferredCheck: false, onLink: onLink
@@ -116,9 +114,7 @@ final class FreshConnectionAfterTimeoutTests: XCTestCase {
         let transport = ConnectionTrackingTransport(
             path: "/attribution/match", firstAttempt: .hang, later: .answer(200, ["matched": false])
         )
-        SDKEnvironment.makeTransport = { transport }
-        SDKEnvironment.deliver = { work in work() }
-        SDKEnvironment.schedule = { _, work in work() }
+        makeSDKSynchronous(transport)
         watchdog.install()
         WarpLink.configure(apiKey: apiKey, options: WarpLinkOptions(autoDeferredCheck: false))
         WarpLink.storage = freshStorage()
@@ -145,9 +141,7 @@ final class FreshConnectionAfterTimeoutTests: XCTestCase {
         let transport = ConnectionTrackingTransport(
             path: "/attribution/match", firstAttempt: .failCancelled, later: .answer(200, ["matched": false])
         )
-        SDKEnvironment.makeTransport = { transport }
-        SDKEnvironment.deliver = { work in work() }
-        SDKEnvironment.schedule = { _, work in work() }
+        makeSDKSynchronous(transport)
         watchdog.install()
         WarpLink.configure(apiKey: apiKey, options: WarpLinkOptions(autoDeferredCheck: false))
         WarpLink.storage = freshStorage()

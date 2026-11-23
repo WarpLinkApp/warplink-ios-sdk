@@ -60,7 +60,7 @@ Create one in the dashboard under **API Keys** > **SDK key**, then pass it to `W
 
 ### First launch already completed
 
-The SDK marks attribution **completed** only on a definitive server response, and that marker is scoped to one install. Within an install, every later launch returns the cached result instead of re-attributing. A failed attempt (for example, offline) is not marked complete, so the SDK retries on the next launch.
+The SDK marks attribution **completed** only on a definitive server response, and that marker is scoped to one install. Within an install, every later launch returns the cached result instead of re-attributing. A failed attempt (for example, offline) is not marked complete, so the SDK tries again on a later launch, after a wait that grows with each failure.
 
 Deleting the app clears the marker, so a reinstall runs the check again. It is reported with `is_reinstall: true`, since a separate Keychain marker remembers that the device was attributed before. That marker never blocks a check.
 
@@ -89,7 +89,11 @@ Look for `[WarpLink]` messages in the Xcode console:
 - `"Attribution already complete for this install, returning cached result"`: attribution already done
 - `"Deferred deep link matched: <linkId>"`: match found
 - `"No deferred deep link match"`: no match found
-- `"Attribution match failed (will retry next launch): ..."`: network or server error
+- `"Attribution match failed (will retry later): ..."`: network or server error
+- `"Deferred check request: attempt <n>, raw signals <yes|no>"`: one line for each request
+- `"Deferred check: <state>"`: how a check ended, and `"Deferred check: waiting, retry at <ISO 8601 time>"` while a wait runs
+
+`WarpLink.deferredCheckStatus` gives the same state in code. See [If your test did not match](deferred-deep-links.md#if-your-test-did-not-match).
 
 ---
 
@@ -226,6 +230,8 @@ All SDK log messages are prefixed with `[WarpLink]` in the Xcode console.
 - `"Deferred deep link matched: <linkId>"`: attribution match found
 - `"No deferred deep link match"`: no match
 - `"Attribution already complete for this install, returning cached result"`: returning cached result
+- `"Deferred check request: attempt <n>, raw signals <yes|no>"`: one line for each request
+- `"Deferred check: <state>"`: how a check ended, with `waiting, retry at <ISO 8601 time>` while a wait runs
 
 ---
 

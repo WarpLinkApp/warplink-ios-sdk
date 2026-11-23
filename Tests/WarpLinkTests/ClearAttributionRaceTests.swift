@@ -40,7 +40,7 @@ final class ClearAttributionRaceTests: XCTestCase {
         )
     }
 
-    private func configure(_ key: String, _ transport: HTTPTransport) {
+    private func configure(_ key: String, _ transport: HTTPTransport, debugLogging: Bool = false) {
         makeSDKSynchronous(transport)
         SDKEnvironment.makeStorage = { [unowned self] environment in
             Storage(
@@ -48,7 +48,9 @@ final class ClearAttributionRaceTests: XCTestCase {
                 markerStore: self.deviceMarkers, installMarkerStore: self.installMarkers
             )
         }
-        WarpLink.configure(apiKey: key, options: WarpLinkOptions(autoDeferredCheck: false))
+        WarpLink.configure(
+            apiKey: key, options: WarpLinkOptions(debugLogging: debugLogging, autoDeferredCheck: false)
+        )
     }
 
     private func startRedeem(_ results: Results) {
@@ -130,7 +132,8 @@ final class ClearAttributionRaceTests: XCTestCase {
         startRedeem(results)
         let epochBefore = ReferralServices.epoch
 
-        configure(testKey, gate)
+        // Same key, other options: a new session. The same options would keep this one.
+        configure(testKey, gate, debugLogging: true)
         gate.release(status: 200, body: ReferralWire.matched)
 
         XCTAssertGreaterThan(ReferralServices.epoch, epochBefore)

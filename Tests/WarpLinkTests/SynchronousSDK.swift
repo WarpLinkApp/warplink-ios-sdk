@@ -97,6 +97,12 @@ func makeSDKSynchronous(_ transport: HTTPTransport) {
     // written, so closing it changes none of them; it stops a retry added later
     // from sleeping inside one.
     SDKEnvironment.schedule = { _, work in work() }
+    // The app is in the foreground. A test process on an iOS simulator is not,
+    // and a check would wait for an activation that never comes.
+    SDKEnvironment.whenActive = { work in work() }
+    // No readable install date. A simulator's real container date is old, and
+    // would make every check in a suite that is not about age look too old.
+    SDKEnvironment.installDate = { nil }
 }
 
 /// Every delay the SDK asked to wait, in order, with nothing actually waited.

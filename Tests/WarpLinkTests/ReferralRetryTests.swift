@@ -36,7 +36,8 @@ final class ReferralRetryTests: ReferralTestCase {
         // would do so against the real storage rather than this test's.
         let kept = pending.record
         pending.record = nil
-        configure(t) { delivered.append($0) }
+        // Different options, so this is a new session, as a later launch is.
+        configure(t, debugLogging: true) { delivered.append($0) }
         pending.record = kept
 
         WarpLink.resumePendingInvitation()

@@ -2,11 +2,13 @@ import Foundation
 
 extension WarpLink {
 
-    /// Redeems an invitation the user pasted.
+    /// Redeems a Tether code or invitation the user pasted.
     ///
     /// Call this only from a user action, with the text the system paste
-    /// control hands you (`WarpLinkPasteButton`, `WarpLinkUIPasteButton`). The
-    /// SDK never reads the pasteboard on its own.
+    /// control hands you (`WarpLinkPasteButton`, `WarpLinkUIPasteButton`). This
+    /// call never reads the pasteboard, and it does not clear it: the paste
+    /// controls do both, because only they know the clipboard has not changed.
+    /// Only text that is a WarpLink code or invitation is sent.
     ///
     /// - `.success(link)`: the invitation matched and `link` is the result. It
     ///   is also cached as `attributionResult`.
@@ -28,7 +30,35 @@ extension WarpLink {
             completion(.failure(.notConfigured))
             return
         }
-        ReferralRedeemer.redeem(text: text, context: context, completion: completion)
+        // An invitation answers its own caller. It never replaces the link onLink
+        // already holds: only a Tether read does.
+        var own = context
+        own.routesExactToOnLink = false
+        ReferralRedeemer.redeem(
+            text: text, stamp: nil, acceptingInvitation: true, context: own
+        ) { result, _ in
+            completion(result)
+        }
+    }
+
+    /// Redeems text a paste control handed over. `stamp` is the clipboard's
+    /// `changeCount` at the paste, so the code is cleared only if it is still
+    /// there. `acceptingInvitation` is true only for the control that reports
+    /// the older invitation result.
+    static func redeemPasted(
+        text: String?,
+        stamp: Int?,
+        acceptingInvitation: Bool = false,
+        completion: @escaping ReferralRedeemer.Report
+    ) {
+        guard let context = referralContext() else {
+            completion(.failure(.notConfigured), ReferralRedeemer.Detail())
+            return
+        }
+        ReferralRedeemer.redeem(
+            text: text, stamp: stamp, acceptingInvitation: acceptingInvitation,
+            context: context, completion: completion
+        )
     }
 
     /// Finishes an invitation that a network failure left undelivered, and
@@ -38,9 +68,10 @@ extension WarpLink {
     /// so a failure is logged by the redeemer and kept for the next launch.
     static func resumePendingInvitation() {
         guard let context = referralContext() else { return }
-        ReferralRedeemer.resume(context: context) { result in
-            guard case let .success(link?) = result else { return }
-            dispatchToOnLink(.success(link))
+        ReferralRedeemer.resume(context: context) { result, detail in
+            guard case let .success(link?) = result, !detail.routedToOnLink,
+                  let generation = detail.clearGeneration else { return }
+            dispatchAttributionToOnLink(.success(link), ifGeneration: generation)
         }
     }
 
@@ -48,7 +79,9 @@ extension WarpLink {
         lock.lock(); defer { lock.unlock() }
         guard let client = apiClient, let store = storage else { return nil }
         return ReferralRedeemer.Context(
-            client: client, store: store, deviceId: fingerprintCollector?.idfv, log: logger
+            client: client, store: store, deviceId: fingerprintCollector?.idfv, log: logger,
+            installationId: store.installationId,
+            readMode: options?.tetherReadMode ?? .pasteButton
         )
     }
 }

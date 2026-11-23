@@ -40,12 +40,20 @@ public final class WarpLink {
     /// the abandoned check can tell it is stale and leave its successor's
     /// in-flight claim and parked callers alone.
     static var deferredCheckGeneration = 0
+    /// The generation of the running check whose result goes to `onLink`, or nil
+    /// when only a manual caller waits for it. Decides whether the gate writes
+    /// the awaiting-delivery marker. A newer generation makes it stale.
+    static var onLinkRoutedGeneration: Int?
+
+    /// The failure the running check counted when it sent, held so a reconfigure
+    /// can give it back. Guarded by `lock`.
+    static var countedCheck: CountedCheck?
 
     static let defaultDomain = "aplnk.to"
     static let dedupeWindow: TimeInterval = 1.0
 
     /// The current SDK version.
-    public static let sdkVersion = "1.3.0"
+    public static let sdkVersion = "1.4.0"
 
     /// Whether the SDK has been configured via `configure(apiKey:options:)`.
     public static var isConfigured: Bool {
@@ -77,81 +85,6 @@ public final class WarpLink {
         return storage?.isAttributionComplete ?? false
     }
 
-    /// Configure the WarpLink SDK with your API key and optional settings.
-    ///
-    /// Call once, as early as possible (SwiftUI `App.init` or
-    /// `application(_:didFinishLaunchingWithOptions:)`). With default options,
-    /// the deferred deep link check runs automatically and results are routed
-    /// to `options.onLink`.
-    public static func configure(
-        apiKey: String,
-        options: WarpLinkOptions? = nil
-    ) {
-        let resolvedOptions = options ?? WarpLinkOptions()
-
-        guard validateApiKeyFormat(apiKey) else {
-            reportInvalidKeyFormat(apiKey, options: resolvedOptions)
-            return
-        }
-
-        let newLogger = Logger(debugEnabled: resolvedOptions.debugLogging)
-        let environment = KeyEnvironment(apiKey: apiKey)
-        let newStorage = SDKEnvironment.makeStorage(environment)
-        let newApiClient = APIClient(apiKey: apiKey, baseURL: resolvedOptions.apiEndpoint)
-
-        let abandoned = installConfiguration(
-            apiKey: apiKey, options: resolvedOptions, environment: environment,
-            logger: newLogger, storage: newStorage, apiClient: newApiClient
-        )
-
-        abandoned.settle()
-        // And the tap the reconfigure abandoned, which is cancelled too.
-        supersedeInFlightTap()
-
-        newLogger.log("Configured with API key: \(Logger.maskApiKey(apiKey))")
-        newLogger.log("API endpoint: \(resolvedOptions.apiEndpoint)")
-
-        performServerValidation(storage: newStorage, apiClient: newApiClient, logger: newLogger)
-
-        if resolvedOptions.autoDeferredCheck {
-            runAutoDeferredCheck()
-        }
-        resumePendingInvitation()
-    }
-
-    /// Swaps in the state of a new key under one lock hold, referral stores
-    /// included, so a concurrent `clearAttribution()` sees one key's stores or
-    /// the other's, never a mix. Reconfiguring abandons any in-flight check; the
-    /// caller answers its parked callers once this returns.
-    private static func installConfiguration(
-        apiKey: String,
-        options: WarpLinkOptions,
-        environment: KeyEnvironment,
-        logger: Logger,
-        storage newStorage: Storage,
-        apiClient newApiClient: APIClient
-    ) -> AbandonedDeferredCheck {
-        // Resolved before the lock is taken: reading the declaration touches the
-        // Info.plist, and none of it needs the SDK's own state.
-        let declaredDomains = resolveLocalDomains(options: options)
-        let cachedServerDomains = LinkDomainNormalizer.normalizeAll(newStorage.cachedDomains)
-
-        lock.lock(); defer { lock.unlock() }
-        self.apiKey = apiKey
-        self.options = options
-        self.logger = logger
-        self.storage = newStorage
-        self.apiClient = newApiClient
-        self.fingerprintCollector = FingerprintCollector()
-        self.apiKeyValidState = nil
-        self.localDomains = declaredDomains
-        self.serverDomains = cachedServerDomains
-        self.lastHandledURLString = nil
-        self.lastHandledURLAt = nil
-        ReferralServices.use(environment)
-        return abandonDeferredCheckLocked()
-    }
-
     /// Reset SDK state. Internal method for testing only.
     static func reset() {
         lock.lock()
@@ -174,11 +107,15 @@ public final class WarpLink {
         // delivery hop must not leak that into the next one.
         SDKEnvironment.reset()
         ReferralServices.reset()
+        TetherServices.reset()
         deferredCheckInFlight = false
+        onLinkRoutedGeneration = nil
         deferredCheckGeneration += 1
+        countedCheck = nil
         parkedDeferredCompletions = []
         let abandonedCheck = takeAbandonedDeferredCheckLocked()
         lock.unlock()
+        PendingForegroundRetry.disarm()
 
         abandonedCheck?.cancel()
         supersedeInFlightTap()

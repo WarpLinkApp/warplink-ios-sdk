@@ -90,7 +90,7 @@ When you call `WarpLink.configure(apiKey:options:)`:
 The SDK splits first-launch tracking into two states:
 
 - **completed**: a definitive server response (match or no-match) was received. Stored in a backup-excluded file inside the app container, so it is scoped to one install: it never comes back from a delete or from a restored backup, and a reinstall is attributed again. Once complete, `checkDeferredDeepLink` returns the cached result with no network call for the rest of that install.
-- **attempted**: an attempt has started this install. Stored in the same backup-excluded file as the completion marker, so a restore does not carry it. If an attempt fails (e.g. offline) it is marked attempted but **not** completed, so the SDK retries on the next launch.
+- **attempted**: an attempt has started this install. Stored in the same backup-excluded file as the completion marker, so a restore does not carry it. If an attempt fails (e.g. offline) it is marked attempted but **not** completed, so the SDK tries again on a later launch, after a wait that grows with each failure.
 
 A third marker, in the **Keychain**, records that this device has been attributed at least once. It outlives both a delete and a restore, and it gates nothing. Its only job is to set `is_reinstall` on the attribution request so a reinstall can be told apart from a first install later.
 
@@ -118,7 +118,7 @@ Once attribution completes, the result (match or no-match) is cached. This means
 
 - The attribution API is called at most once per app install. A reinstall or a backup restore is a new install and is attributed again, except in the rare case where the completion marker could not be written to the backup-excluded file and fell back to UserDefaults.
 - Subsequent calls to `checkDeferredDeepLink` return instantly from cache
-- A failed attempt is not cached and does not block a retry on the next launch
+- A failed attempt is not cached and does not block a retry on a later launch, after the wait
 
 ## Related Guides
 

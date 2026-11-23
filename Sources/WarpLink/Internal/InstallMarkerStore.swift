@@ -1,8 +1,8 @@
 import Foundation
 
-/// A per-install boolean-marker store.
+/// A per-install store of boolean markers and small text values.
 ///
-/// Contract: a marker written here must NOT survive app deletion, and must NOT
+/// Contract: a marker or value written here must NOT survive app deletion, and must NOT
 /// come back from an iCloud/iTunes restore. Anything that can come back would
 /// gate a genuinely new install and silently lose its attribution.
 ///
@@ -14,6 +14,10 @@ protocol InstallMarkerStore {
     @discardableResult func mark(_ key: String) -> Bool
     func isMarked(_ key: String) -> Bool
     @discardableResult func clear(_ key: String) -> Bool
+
+    /// The text written under `key`, or nil when there is none.
+    func value(_ key: String) -> String?
+    @discardableResult func write(_ key: String, value: String) -> Bool
 }
 
 /// File-backed `InstallMarkerStore` that keeps its markers out of backups.
@@ -47,12 +51,19 @@ final class BackupExcludedFileStore: InstallMarkerStore {
 
     @discardableResult
     func mark(_ key: String) -> Bool {
-        guard let directory = directory, prepareDirectory(directory) else { return false }
-        return fileManager.createFile(
-            atPath: directory.appendingPathComponent(key).path,
-            contents: Data([1]),
-            attributes: Self.writeAttributes
-        )
+        write(key, contents: Data([1]))
+    }
+
+    func value(_ key: String) -> String? {
+        guard let directory = directory,
+              let data = fileManager.contents(atPath: directory.appendingPathComponent(key).path)
+        else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    @discardableResult
+    func write(_ key: String, value: String) -> Bool {
+        write(key, contents: Data(value.utf8))
     }
 
     func isMarked(_ key: String) -> Bool {
@@ -74,6 +85,15 @@ final class BackupExcludedFileStore: InstallMarkerStore {
     }
 
     // MARK: - Private
+
+    private func write(_ key: String, contents: Data) -> Bool {
+        guard let directory = directory, prepareDirectory(directory) else { return false }
+        return fileManager.createFile(
+            atPath: directory.appendingPathComponent(key).path,
+            contents: contents,
+            attributes: Self.writeAttributes
+        )
+    }
 
     private static func defaultDirectory(fileManager: FileManager) -> URL? {
         fileManager

@@ -72,6 +72,19 @@
 				<string>35F9.1</string>
 			</array>
 		</dict>
+		<dict>
+			<!-- The creation date of the app's own Documents and Library
+			     directories tells the SDK how old this install is, so an old
+			     install does not ask the server for a first-install match.
+			     Reason C617.1: access timestamps of files inside the app
+			     container. The date is compared on the device and never sent. -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

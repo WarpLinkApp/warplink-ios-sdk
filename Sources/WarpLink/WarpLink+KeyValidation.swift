@@ -58,6 +58,7 @@ extension WarpLink {
             apiKeyValidState = true
             storage.apiKeyValidatedAt = Date()
             lock.unlock()
+            storage.savePolicy(validation.policy)
             // Outside the lock: `applyServerDomains` takes it, and `lock` is a
             // plain NSLock, so nesting the two would deadlock.
             applyServerDomains(validation.domains, storage: storage)

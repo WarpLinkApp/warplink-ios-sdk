@@ -170,9 +170,7 @@ final class DeferredCheckRetryTests: XCTestCase {
 
     func testAReconfigureCancelsWhatTheCheckLeftOnTheWire() {
         let t = CancellingTransport(holdingPathContaining: "/attribution/match")
-        SDKEnvironment.makeTransport = { t }
-        SDKEnvironment.deliver = { work in work() }
-        SDKEnvironment.schedule = { _, work in work() }
+        makeSDKSynchronous(t)
         WarpLink.configure(apiKey: apiKey, options: WarpLinkOptions(autoDeferredCheck: false))
         WarpLink.storage = freshStorage()
 
@@ -183,7 +181,7 @@ final class DeferredCheckRetryTests: XCTestCase {
 
         // Reconfiguring abandons that check. Ignoring its answer is not enough:
         // its connection would stay open for the whole of its timeout.
-        WarpLink.configure(apiKey: apiKey, options: WarpLinkOptions(autoDeferredCheck: false))
+        WarpLink.configure(apiKey: apiKey, options: WarpLinkOptions(debugLogging: true, autoDeferredCheck: false))
 
         XCTAssertTrue(t.held[0].cancelled, "an abandoned check's request must be stopped")
         // And the cancellation it causes is not an error to show a user. The

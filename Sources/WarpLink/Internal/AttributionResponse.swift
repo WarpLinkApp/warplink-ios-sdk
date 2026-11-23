@@ -17,6 +17,10 @@ struct AttributionResponse {
     let replayState: String?
     let capturedParams: [String: JSONValue]?
     let tappedAt: String?
+    /// What the server did with a Tether code. Nil when none was sent.
+    let tether: TetherResponse?
+    /// The server's traffic policy. Nil when the answer has none or a bad one.
+    let sdkPolicy: SDKPolicy?
 }
 
 extension AttributionResponse {
@@ -57,6 +61,8 @@ extension AttributionResponse {
         replayState = json["replay_state"] as? String
         capturedParams = Self.params(json["captured_params"])
         tappedAt = json["tapped_at"] as? String
+        tether = TetherResponse(json: json["tether"])
+        sdkPolicy = SDKPolicy.parse(json["sdk_policy"])
     }
 
     private static func params(_ value: Any?) -> [String: JSONValue]? {

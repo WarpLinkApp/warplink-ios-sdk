@@ -5,6 +5,8 @@ import Foundation
 struct ValidationResult {
     let valid: Bool
     let domains: [String]
+    /// The server's traffic policy. Nil when the answer has none or a bad one.
+    var policy: SDKPolicy? = nil
 }
 
 /// HTTP client for WarpLink API calls. Uses URLSession with zero dependencies.
@@ -85,7 +87,9 @@ class APIClient {
             let json = data.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
             let valid = (json?["valid"] as? Bool) ?? true
             let domains = (json?["domains"] as? [String]) ?? []
-            return .success(ValidationResult(valid: valid, domains: domains))
+            return .success(ValidationResult(
+                valid: valid, domains: domains, policy: SDKPolicy.parse(json?["sdk_policy"])
+            ))
         case 401, 403:
             return .success(ValidationResult(valid: false, domains: []))
         default:

@@ -25,7 +25,7 @@ Opt-out by default: a single `configure(apiKey:options:)` with an `onLink` sink 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.3.0")
+    .package(url: "https://github.com/WarpLinkApp/warplink-ios-sdk", from: "1.4.0")
 ]
 ```
 
@@ -44,7 +44,7 @@ Everything is on by default. Configure once with a single `onLink` sink, then ad
 
 ### 1. Configure with one sink
 
-`onLink` receives every resolved link: cold-start, warm-start, and deferred (first-install). Tell them apart with `deepLink.isDeferred`. Only a real match or an error reaches `onLink`; a deferred check that finds no match is suppressed and never dispatched to the sink. A background deferred check that cannot finish, for example on a launch with no network, retries by itself on the next launch.
+`onLink` receives every resolved link: cold-start, warm-start, and deferred (first-install). Tell them apart with `deepLink.isDeferred`. Only a real match or an error reaches `onLink`; a deferred check that finds no match is suppressed and never dispatched to the sink. A background deferred check that cannot finish, for example on a launch with no network, retries by itself on a later launch, after a wait that grows with each failure.
 
 ```swift
 import SwiftUI
@@ -81,7 +81,11 @@ struct MyApp: App {
 
 The deferred deep link check fires automatically from `configure()`. There is nothing else to call for first-install attribution.
 
-**Testing a first install.** A `wl_test_` key keeps its attribution state apart from `wl_live_` state on the same device. To test a first install again without deleting the app, call `WarpLink.clearAttribution()` with a Test key. It clears the attribution stored on the device and starts a new check. It does nothing with a live key.
+**Testing a first install.** A `wl_test_` key keeps its attribution state apart from `wl_live_` state on the same device. It has no waits and no age limits, and it needs a Test app with its own bundle ID. Give the debug build that bundle ID, and add `applinks:<handle>-test.aplnk.to` to its Associated Domains. To test a first install again without deleting the app, call `WarpLink.clearAttribution()` with a Test key. It clears the attribution stored on the device and starts a new check. It does nothing with a live key.
+
+**If a test shows no link.** Read `WarpLink.deferredCheckStatus`. It tells a check that did not send (a wait, an install that is too old, or a check the SDK gave up on) from a check that found no link, and it sends no request. See [If your test did not match](docs/deferred-deep-links.md#if-your-test-did-not-match).
+
+**From SDK 1.4.0,** the `onLink` parameter is `@MainActor`, so your handler can call your own main-actor code and compile under Swift 6 without `MainActor.assumeIsolated`. Calling `configure` again with the same key and options keeps the running session and only takes the new `onLink`.
 
 ### 2. Deliver incoming Universal Links (one hook)
 
@@ -123,6 +127,7 @@ Every feature is opt-out via `WarpLinkOptions`:
 WarpLinkOptions(
     autoDeepLinkHandling: false,  // don't auto-resolve links from open()/continue(); use handleDeepLink instead
     autoDeferredCheck: false,     // don't auto-run the deferred check; call checkDeferredDeepLink yourself
+    tetherReadMode: .pasteButton, // .automatic reads the clipboard at first launch; .onCall waits for readTether()
     onLink: nil                   // no single sink; use the per-call completion handlers
 )
 ```
@@ -146,6 +151,38 @@ if WarpLink.isWarpLinkURL(url) {
 ```
 
 `isWarpLinkURL(_:)` is the same check `WarpLink.open(_:)` makes: a host in the known link-domain set, and a path that carries a slug. It resolves nothing and touches no network, so it is safe to call on every URL. Declare your own domain in `WarpLinkOptions.linkDomains` or your Info.plist and `isWarpLinkURL(_:)` recognizes it.
+
+## Tether: carry the link through the install
+
+When a person copies a WarpLink code on the web and installs your app, the SDK can read that code and route to the link. The default is Apple's paste button, which needs iOS 16: nothing is read until the person taps it. On iOS 15 use `WarpLink.readTether(completion:)` from a plain button.
+
+```swift
+// SwiftUI. The paste button needs iOS 16; on iOS 15 use a plain button that calls readTether.
+func handle(_ result: Result<TetherReadResult, WarpLinkError>) {
+    // Runs on the main queue.
+    // .success(.matched(link)): route to link
+    // .success(.noCode(reason)): nothing to use. Let the person continue.
+    // .success(.unusable), .success(.test(receipt:)): continue as normal
+}
+
+if #available(iOS 16.0, *) {
+    WarpLinkPasteButton(onTether: handle)
+} else {
+    Button("Paste your code") { WarpLink.readTether(completion: handle) }
+}
+```
+
+UIKit has `WarpLinkUIPasteButton` with the same `onTether` hook. Both are Apple's own paste control and are not restyled. Only text that is a WarpLink code (`wl1_` or `wl1t_`) is sent. Anything else stays on the device. The SDK takes its clipboard stamp at the tap and empties the clipboard only after the server used the code, and only if nothing was copied since the tap. A `wl1_` live code clears when the server accepted it. A `wl1t_` test code clears when the server reports it as a test.
+
+The call `WarpLinkPasteButton { result in ... }` from 1.3.0 still compiles and still accepts the older unprefixed invitation text. A button with `onTether` alone sends `wl1_` and `wl1t_` codes only. Give it `onResult` as well to keep accepting the older text: `WarpLinkPasteButton(onResult: { ... }, onTether: { ... })`.
+
+Two other read modes exist. Set `tetherReadMode` in `WarpLinkOptions`:
+
+- `.pasteButton` (default): the SDK never reads on its own.
+- `.automatic`: the SDK reads the clipboard once at first launch. iOS shows its paste prompt.
+- `.onCall`: the SDK reads only when you call `WarpLink.readTether(completion:)`.
+
+`readTether` works in every mode. A test code (`wl1t_`) is accepted and recorded nowhere. `WarpLink.lastTetherTestReceipt` holds its receipt for a test screen.
 
 ## Features
 

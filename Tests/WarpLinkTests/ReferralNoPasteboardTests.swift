@@ -1,22 +1,54 @@
 import XCTest
 
-/// The SDK must never read the pasteboard on its own. The only way text reaches
-/// it is the system paste control the person taps.
+/// The SDK never reads the pasteboard on its own in the default mode. The
+/// pasteboard is named in one file, and the paste components are UIKit only.
 final class ReferralNoPasteboardTests: XCTestCase {
 
-    // conformance: WL-S47
-    func testNoSourceFileReadsThePasteboard() throws {
+    private static let clipboardFile = "SystemClipboard.swift"
+    private static let guardLine = "canImport(UIKit)"
+    private static let clipboardNames = ["UIPasteboard", "NSPasteboard"]
+    private static let pasteControlNames = ["PasteButton(", "UIPasteControl("]
+
+    private func sourceFiles() throws -> [(name: String, text: String)] {
         let sources = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/WarpLink")
         let files = try XCTUnwrap(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
-        var checked = 0
+        var found: [(String, String)] = []
         for case let file as URL in files where file.pathExtension == "swift" {
-            let text = try String(contentsOf: file, encoding: .utf8)
-            checked += 1
-            XCTAssertFalse(text.contains("UIPasteboard"), "\(file.lastPathComponent) reads the pasteboard")
-            XCTAssertFalse(text.contains("NSPasteboard"), "\(file.lastPathComponent) reads the pasteboard")
+            found.append((file.lastPathComponent, try String(contentsOf: file, encoding: .utf8)))
         }
-        XCTAssertGreaterThan(checked, 10, "the scan must find the sources")
+        XCTAssertGreaterThan(found.count, 10, "the scan must find the sources")
+        return found
+    }
+
+    // conformance: WL-S47
+    // conformance: WL-S61
+    func testOnlyTheGuardedClipboardFileNamesThePasteboard() throws {
+        for (name, text) in try sourceFiles() {
+            let names = Self.clipboardNames.contains { text.contains($0) }
+            if name == Self.clipboardFile {
+                XCTAssertTrue(names, "the clipboard file must hold the pasteboard calls")
+                XCTAssertTrue(
+                    text.hasPrefix("import Foundation\n\n#if \(Self.guardLine)"),
+                    "\(name) must open with the UIKit guard"
+                )
+            } else {
+                XCTAssertFalse(names, "\(name) names the pasteboard")
+            }
+        }
+    }
+
+    // conformance: WL-S47
+    func testEveryPasteComponentIsGuardedByUIKit() throws {
+        var guarded = 0
+        for (name, text) in try sourceFiles() where Self.pasteControlNames.contains(where: text.contains) {
+            guarded += 1
+            XCTAssertTrue(
+                text.hasPrefix("#if canImport("),
+                "\(name) must start with a canImport guard"
+            )
+        }
+        XCTAssertEqual(guarded, 3, "the SwiftUI button, its UIKit wrapper and the UIKit button")
     }
 }

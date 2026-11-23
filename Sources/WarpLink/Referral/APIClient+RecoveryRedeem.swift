@@ -2,9 +2,9 @@ import Foundation
 
 extension APIClient {
 
-    /// Redeems a pasted recovery token through the match route.
+    /// Redeems a pasted Tether code or invitation through the match route.
     ///
-    /// The request carries the token and the device id (IDFV), nothing that
+    /// The request carries the code and the device id (IDFV), nothing that
     /// could match on its own. The server refuses a bad token with a 400 unless
     /// a referrer or device signals travel with it, and a device id does not
     /// count as one: it only lets the server read a repeat from the install that
@@ -13,7 +13,7 @@ extension APIClient {
     /// never hear that the invitation was unusable.
     @discardableResult
     func redeemRecoveryToken(
-        _ token: String,
+        tether: TetherRequestFields,
         deviceId: String?,
         sdkVersion: String,
         isReinstall: Bool,
@@ -30,8 +30,8 @@ extension APIClient {
             "fingerprint_version": "enriched",
             "sdk_version": sdkVersion,
             "is_reinstall": isReinstall,
-            "recovery_token": token,
         ]
+        tether.write(to: &body)
         if let deviceId = deviceId, !deviceId.isEmpty {
             body["device_id"] = deviceId
         }

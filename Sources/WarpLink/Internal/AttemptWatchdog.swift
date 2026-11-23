@@ -34,7 +34,7 @@ enum AttemptWatchdog {
     ///     cancelling on purpose. Calling it for that second case anyway is
     ///     harmless for an abandoned attempt, since nothing here rides its
     ///     connection further, and it is exactly what a still-current attempt's
-    ///     retry needs. Bead: warplink-i7oa, extending warplink-qr6k.
+    ///     retry needs.
     ///   - send: issues the request and returns its handle. Called once.
     /// - Returns: the attempt's handle, so a supersede can still stop it.
     static func bound<T>(
@@ -43,16 +43,37 @@ enum AttemptWatchdog {
         discardConnection: @escaping () -> Void = {},
         send: (@escaping (Result<T, WarpLinkError>) -> Void) -> HTTPTask
     ) -> HTTPTask {
+        boundClaiming(
+            timeout: timeout, completion: completion, discardConnection: discardConnection
+        ) { answer, _ in send(answer) }
+    }
+
+    /// Like `bound`, and `send` also gets `claimAnswer`, for an attempt that
+    /// acts on its answer on the network queue, before the answer is handed on.
+    ///
+    /// `claimAnswer` returns true when the answer arrived in time, and from then
+    /// on the watchdog no longer times the attempt out. It returns false when
+    /// the watchdog already fired: that answer is reported as a timeout, so the
+    /// attempt must not act on it. The check and the claim are one step, so an
+    /// answer cannot be applied and also reported as a timeout.
+    static func boundClaiming<T>(
+        timeout: TimeInterval,
+        completion: @escaping (Result<T, WarpLinkError>) -> Void,
+        discardConnection: @escaping () -> Void = {},
+        send: (@escaping (Result<T, WarpLinkError>) -> Void, @escaping () -> Bool) -> HTTPTask
+    ) -> HTTPTask {
         let state = AttemptState()
         let timer = SDKEnvironment.armWatchdog(timeout) {
-            // First, so the retry cannot be sent before the connection is gone:
-            // cancelling answers the attempt, and the answer schedules the retry.
+            // Not answered yet. Outside the state's lock: cancelling calls the
+            // completion, which takes it.
+            guard let task = state.timeOut() else { return }
+            // Before the cancel, so the retry cannot be sent before the
+            // connection is gone: cancelling answers the attempt, and the
+            // answer schedules the retry.
             discardConnection()
-            // Outside the state's lock: cancelling calls the completion, which
-            // takes it.
-            state.markTimedOut()?.cancel()
+            task.value?.cancel()
         }
-        let task = send { result in
+        let task = send({ result in
             timer.cancel()
             guard !state.didTimeOut else {
                 completion(asTimeout(result))
@@ -60,7 +81,7 @@ enum AttemptWatchdog {
             }
             if isUnwatchdoggedCancellation(result) { discardConnection() }
             completion(result)
-        }
+        }, { state.claimAnswer() })
         // Fired between issuing the attempt and recording its handle: stop it
         // here, or the bound this whole type exists for would not apply.
         if state.record(task) { task.cancel() }
@@ -94,23 +115,39 @@ enum AttemptWatchdog {
     }
 }
 
-/// One attempt's handle and whether its watchdog fired, behind a lock.
+/// One attempt's handle, whether its watchdog fired and whether its answer was
+/// claimed, behind a lock.
 ///
 /// Both are written on one thread and read on another: the handle arrives on
 /// whichever thread issued the attempt, the timeout on the queue the timer runs
 /// on, and the answer on whichever thread the transport completes.
 private final class AttemptState {
 
+    /// The handle, boxed so `timeOut` can say "fired, nothing to cancel yet".
+    struct Handle {
+        let value: HTTPTask?
+    }
+
     private let lock = NSLock()
     private var timedOut = false
+    private var answered = false
     private var task: HTTPTask?
 
     /// Mark the attempt timed out and hand back the request to stop, if one has
-    /// been recorded yet.
-    func markTimedOut() -> HTTPTask? {
+    /// been recorded yet. Nil when the answer was already claimed in time.
+    func timeOut() -> Handle? {
         lock.lock(); defer { lock.unlock() }
+        guard !answered else { return nil }
         timedOut = true
-        return task
+        return Handle(value: task)
+    }
+
+    /// Take the answer for good. False when the watchdog has already fired.
+    func claimAnswer() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard !timedOut else { return false }
+        answered = true
+        return true
     }
 
     /// Record the attempt's handle. True when the watchdog has already fired, so

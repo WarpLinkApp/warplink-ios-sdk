@@ -112,12 +112,13 @@ class ReferralTestCase: XCTestCase {
     @discardableResult
     func configure(
         _ transport: HTTPTransport,
+        debugLogging: Bool = false,
         onLink: (@Sendable (Result<WarpLinkDeepLink?, WarpLinkError>) -> Void)? = nil
     ) -> Storage {
         makeSDKSynchronous(transport)
         WarpLink.configure(
             apiKey: apiKey,
-            options: WarpLinkOptions(autoDeferredCheck: false, onLink: onLink)
+            options: WarpLinkOptions(debugLogging: debugLogging, autoDeferredCheck: false, onLink: onLink)
         )
         let defaults = UserDefaults(suiteName: "ReferralStorage-\(type(of: self))")!
         defaults.removePersistentDomain(forName: "ReferralStorage-\(type(of: self))")

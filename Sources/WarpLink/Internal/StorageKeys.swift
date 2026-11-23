@@ -10,6 +10,9 @@ struct StorageKeys {
     /// is in `legacy` so it is cleaned up.
     let attemptedMarker: String
     let cachedAttribution: String
+    /// The identity of the last attribution link handed to `onLink`. Written when
+    /// `onLink` is called, so it records delivery and not just a match.
+    let onLinkDelivered: String
     let domains: String
     /// The gate, in the install marker store.
     let installCompleteMarker: String
@@ -23,15 +26,40 @@ struct StorageKeys {
     /// install. That is the safer half to lose: a re-fire on every launch would
     /// double-count an install on every single launch.
     let installCompleteFallback: String
+    /// The installation id, in the install marker store so a restore does not
+    /// bring it back.
+    let installationId: String
+    /// How many launches of this install sent a deferred check, in the install
+    /// marker store.
+    let attemptNumber: String
+    /// The failed checks of this install (`CheckBackoff.encoded`), in the
+    /// install marker store.
+    let checkBackoff: String
+    /// The note that a check was skipped because the install is too old, in the
+    /// install marker store. Never the gate.
+    let skippedForAge: String
+    /// The route identity of a link the gate saved that `onLink` has not yet
+    /// received, in the install marker store. Absent for any install that saved
+    /// its link before this marker existed, so an upgrade never redelivers.
+    let awaitingDelivery: String
+    /// The server's last `sdk_policy`. It describes the key, not the install.
+    let sdkPolicy: String
 
     init(environment: KeyEnvironment = .production) {
         apiKeyValidatedAt = environment.scoped("warplink_api_key_validated_at")
         attemptedMarker = environment.scoped("warplink_attribution_attempted")
         cachedAttribution = environment.scoped("warplink_cached_attribution")
+        onLinkDelivered = environment.scoped("warplink_onlink_delivered")
         domains = environment.scoped("warplink_cached_domains")
         installCompleteMarker = environment.scoped("warplink_attribution_complete")
         deviceSeenMarker = environment.scoped("warplink_attribution_complete")
         installCompleteFallback = environment.scoped("warplink_attribution_complete_fallback")
+        installationId = environment.scoped("warplink_installation_id")
+        attemptNumber = environment.scoped("warplink_attempt_number")
+        checkBackoff = environment.scoped("warplink_check_backoff")
+        skippedForAge = environment.scoped("warplink_skipped_for_age")
+        awaitingDelivery = environment.scoped("warplink_awaiting_delivery")
+        sdkPolicy = environment.scoped("warplink_sdk_policy")
     }
 
     /// Keys 1.0.x wrote and nothing reads any more: its first-launch flag and

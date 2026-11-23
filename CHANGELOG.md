@@ -5,6 +5,124 @@ All notable changes to the WarpLink iOS SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-11-22
+
+### Added
+
+- **Tether read.** The SDK reads a WarpLink code (`wl1_` live, `wl1t_` test)
+  from the clipboard after install and sends it with the first attribution
+  request, so the link survives the App Store. Three read modes through
+  `WarpLinkOptions.tetherReadMode`: `.pasteButton` (default, the SDK never
+  reads by itself), `.automatic` (one read at first launch) and `.onCall`.
+- **`WarpLink.readTether(completion:)`.** Reads the clipboard now and returns a
+  `TetherReadResult`: `.matched`, `.noCode(reason)`, `.unusable` or
+  `.test(receipt:)`. Works in every mode.
+- **`WarpLinkPasteButton(onResult:onTether:)` and `WarpLinkUIPasteButton.onTether`.**
+  Report each tap as a `TetherReadResult`. `WarpLinkPasteButton { _ in }` and
+  every other 1.3.0 call shape compile unchanged. On iOS the SwiftUI button is
+  Apple's `UIPasteControl`, so the clipboard stamp is taken at the tap.
+- **`WarpLink.lastTetherTestReceipt`.** The receipt of the last test code the
+  server took.
+- **`WarpLink.deferredCheckStatus`.** Tells a skipped check from a check that
+  found no link. It returns a `DeferredCheckStatus`: `.notChecked`,
+  `.checking`, `.matched`, `.noMatch`, `.waiting(retryAt:)`,
+  `.skippedOldInstall` or `.stopped`. It sends nothing and comes from what the
+  SDK stored, so a relaunch keeps the answer. `.notChecked` also means that a
+  check failed and its wait has passed, so the next one may send. A `wl_test_`
+  key never reports `.waiting`, `.skippedOldInstall` or `.stopped`. With
+  `debugLogging` on, each check ends with a `Deferred check: <state>` line.
+- **`TetherReadMode` and `TetherMissReason`.** The request carries the read
+  mode, `sdk_platform`, and a stable installation ID kept in the backup-excluded
+  install marker store. The ID resets on reinstall and on `clearAttribution()`.
+
+### Changed
+
+- **`onLink` runs on the main actor.** The `onLink` parameter of
+  `WarpLinkOptions.init` is now
+  `@MainActor @Sendable (Result<WarpLinkDeepLink?, WarpLinkError>) -> Void`, so
+  a handler can call `@MainActor` code without a hop. The SDK already called it
+  on the main queue. Existing code compiles unchanged in Swift 5 mode and in
+  Swift 6 mode with default main-actor isolation. The `WarpLinkOptions.onLink`
+  property keeps its `@Sendable` type, so code that reads it and calls it still
+  compiles. Calling it from the main thread runs the handler at once. Calling
+  it from another thread runs the handler on the main queue.
+- With `debugLogging` on, the check gate decision and the install age are logged
+  once per check, and each request logs its attempt number and whether raw
+  signals go with it.
+- Only text that parses as a WarpLink code is sent. Other clipboard content is
+  never sent and never stored.
+- The clipboard is cleared only after the server accepted the code (or took it
+  as a test), and only while it still holds that code. The paste components
+  check the pasteboard change count instead of reading it again, so no second
+  paste prompt appears.
+- The unprefixed 50-character invitation token still works through
+  `redeemInvitation(text:completion:)` and through a paste button that has
+  `onResult`. Automatic reads, `readTether()` and a Tether-only paste button send
+  `wl1_` and `wl1t_` codes only.
+- A live code clears the clipboard only when the server accepted it. A test
+  code clears only when the server reported a test.
+- `readTether(completion:)` always completes on the main queue. Every first
+  attribution request carries the read mode.
+- A `pending` Tether answer (the code is genuine and its tap record has not
+  arrived yet) is not final. The SDK waits the `retry_after_seconds` the server
+  gives, capped at 30 seconds, sends the same request once more, and keeps
+  attribution open and the pasted code on the device if the answer is still
+  pending.
+- When a Tether read (`readTether` or a paste button) resolves a different link
+  from the one the first-launch check gave `onLink`, `onLink` fires again with
+  the exact link. The exact link has `matchType == .deterministic`,
+  `evidenceClass == .exact` and `matchGuaranteed == true`. The SDK keeps which
+  link `onLink` received across launches, and compares links by link id, so the
+  same link with stronger evidence does not fire again. The `readTether` or
+  paste button callback gets the link too. With no earlier link, only that
+  callback hears it. `redeemInvitation` never fires `onLink` again.
+- A 429 never sends the request again without the code, and a request that
+  does go again without it keeps its read mode and miss reason.
+- The match request reports `react-native` or `flutter` as `sdk_platform` when
+  one of those SDKs hosts this one.
+- A test code writes nothing: the SDK repeats the attribution match without it.
+- Internal: the referral redeemer and storage files were split to stay under
+  the file size limit. No behaviour change.
+- **Fewer repeat attribution requests.** A check that failed (offline, timeout,
+  server error) is no longer repeated on every launch. The next check waits 15
+  minutes, then 1 hour, 6 hours and 24 hours after each further failure, and
+  the SDK stops asking 3 days after the first failure. A check counts as failed
+  from the moment its request is sent, so an app that is killed while the
+  request is out still waits. A 200 answer that completes the check clears the
+  wait. A 200 answer with nothing to route to does not, and stays counted. A
+  check that `configure` abandons gives its count back. A manual `checkDeferredDeepLink` call inside the wait returns no match
+  and sends nothing. The server can change these values with the `sdk_policy`
+  block it returns, and the SDK keeps each value inside a safe range. A
+  `wl_test_` key never waits.
+- **Old installs do not ask.** An install older than 30 days sends no request
+  and the check returns no match. An install older than 48 hours sends the
+  request without raw device signals and keeps the device ID and any WarpLink
+  code. A `wl_test_` key is not limited by age. The SDK reads the install date
+  from the creation date of the app's own Documents and Library folders and
+  never sends it. `PrivacyInfo.xcprivacy` declares this under file timestamps
+  with reason C617.1. A skipped check leaves reinstall detection unchanged.
+- **The check starts when the app is active.** A check requested earlier, by
+  `configure` or by `checkDeferredDeepLink`, waits for the app to become active
+  and then runs. It never fails because of the wait. The age and wait rules are
+  applied again once the app is active. Inside an app extension, in a process
+  with no app object, and in a customer's XCTest process that is not active,
+  the check runs at once, as in 1.3.0.
+- **`configure` is safe to call again.** Calling it with the same key and equal
+  options keeps the running session and its check. Only `onLink` is taken from
+  the new options. A different key or different options start a new session as
+  before.
+- **A completed check is saved when the answer arrives,** before the result is
+  handed to your app on the main queue, so an app that ends in between does not
+  ask again for an install the server already answered. If it ended before
+  `onLink` received the link, the next launch hands it over once. An install
+  that saved its link with an earlier version never gets that link again.
+- The SDK builds with `APPLICATION_EXTENSION_API_ONLY=YES`, so an app can link
+  it into an app extension.
+- The match request carries `attempt_number`: the count of launches of this
+  install that sent a check, the same on each retry inside one launch. The SDK
+  reads and keeps `sdk_policy` from the match and key validation answers. An
+  answer without it keeps the built-in values.
+
 ## [1.3.0] - 2026-11-02
 
 ### Added

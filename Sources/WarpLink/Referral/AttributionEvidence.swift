@@ -10,6 +10,20 @@ public enum MatchMethod: String, Codable, Sendable {
     /// The app was opened from the link on a device that already had it.
     case linkOpen = "link_open"
     case probabilistic
+
+    /// Reads a method name. The server calls the install referrer match
+    /// `referrer`, and rows from before that name carry `android_referrer`.
+    /// Both give `.androidReferrer`. Any other unknown name gives `nil`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "install_token": self = .installToken
+        case "referrer", "android_referrer": self = .androidReferrer
+        case "device_id": self = .deviceId
+        case "link_open": self = .linkOpen
+        case "probabilistic": self = .probabilistic
+        default: return nil
+        }
+    }
 }
 
 /// How strong the evidence behind a match is.
